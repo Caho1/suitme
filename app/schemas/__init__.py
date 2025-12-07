@@ -1,0 +1,176 @@
+"""
+Pydantic Request/Response Schemas
+
+定义 API 请求体和响应体的数据结构。
+包含数据验证逻辑，确保输入数据符合业务规则。
+"""
+
+import base64
+import re
+from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ============== 枚举类型 ==============
+
+class AngleType(str, Enum):
+    """视角枚举"""
+    FRONT = "front"
+    SIDE = "side"
+    BACK = "back"
+
+
+# ============== 通用模型 ==============
+
+class BodyProfile(BaseModel):
+    """用户身体参数"""
+    gender: Literal["male", "female"] = Field(..., description="性别")
+    height_cm: float = Field(..., gt=0, le=300, description="身高 (cm)")
+    weight_kg: float = Field(..., gt=0, le=500, description="体重 (kg)")
+    age: int = Field(..., gt=0, le=150, description="年龄")
+    skin_tone: str = Field(..., min_length=1, description="肤色")
+    body_shape: str | None = Field(default=None, description="身材类型")
+
+
+# ============== Data URI 验证 ==============
+
+# Data URI 格式: data:[<mediatype>][;base64],<data>
+DATA_URI_PATTERN = re.compile(
+    r"^data:image/(jpeg|jpg|png|gif|webp|bmp);base64,[A-Za-z0-9+/]+=*$"
+)
+
+
+def validate_data_uri(value: str) -> str:
+    """
+    验证 Data URI 格式的 Base64 图片字符串
+    
+    Args:
+        value: 待验证的字符串
+        
+    Returns:
+        验证通过的原始字符串
+        
+    Raises:
+        ValueError: 格式不符合 Data URI 规范
+    """
+    if not value:
+        raise ValueError("图片数据不能为空")
+    
+    if not DATA_URI_PATTERN.match(value):
+        raise ValueError(
+            "图片必须是有效的 Data URI 格式: data:image/<type>;base64,<data>"
+        )
+    
+    # 提取 base64 部分并验证
+    try:
+        base64_part = value.split(",", 1)[1]
+        base64.b64decode(base64_part, validate=True)
+    except Exception:
+        raise ValueError("Base64 数据无效")
+    
+    return value
+
+
+def is_valid_data_uri(value: str) -> bool:
+    """检查字符串是否为有效的 Data URI 格式"""
+    try:
+        validate_data_uri(value)
+        return True
+    except (ValueError, Exception):
+        return False
+
+
+# ============== 请求模型 ==============
+
+class DefaultModelRequest(BaseModel):
+    """默认模特生成请求"""
+    request_id: str = Field(..., min_length=1, description="请求唯一标识")
+    user_id: str = Field(..., min_length=1, description="用户 ID")
+    user_image_base64: str = Field(..., description="用户正面照片 (Data URI 格式)")
+    body_profile: BodyProfile = Field(..., description="用户身体参数")
+
+    @field_validator("user_image_base64")
+    @classmethod
+    def validate_user_image(cls, v: str) -> str:
+        return validate_data_uri(v)
+
+
+class EditModelRequest(BaseModel):
+    """模特编辑请求"""
+    request_id: str = Field(..., min_length=1, description="请求唯一标识")
+    user_id: str = Field(..., min_length=1, description="用户 ID")
+    base_model_task_id: int = Field(..., gt=0, description="基础模特任务 ID")
+    edit_instructions: str = Field(..., min_length=1, description="编辑指令")
+
+
+class OutfitModelRequest(BaseModel):
+    """穿搭生成请求"""
+    request_id: str = Field(..., min_length=1, description="请求唯一标识")
+    user_id: str = Field(..., min_length=1, description="用户 ID")
+    base_model_task_id: int = Field(..., gt=0, description="基础模特任务 ID")
+    angle: AngleType = Field(..., description="视角: front/side/back")
+    outfit_image_urls: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=5,
+        description="服装单品图片路径列表 (1-5 张，支持 URL 或本地路径)",
+    )
+    outfit_description: str | None = Field(default=None, description="服装描述")
+
+    @field_validator("outfit_image_urls")
+    @classmethod
+    def validate_outfit_urls(cls, v: list[str]) -> list[str]:
+        """验证图片路径列表非空"""
+        for url in v:
+            if not url or not url.strip():
+                raise ValueError("图片路径不能为空")
+        return v
+
+
+# ============== 响应模型 ==============
+
+class TaskData(BaseModel):
+    """任务数据"""
+    task_id: int = Field(..., description="任务 ID")
+    status: str = Field(..., description="任务状态")
+    angle: str | None = Field(default=None, description="视角 (仅穿搭任务)")
+
+
+class TaskResponse(BaseModel):
+    """任务创建响应"""
+    code: int = Field(default=0, description="响应码，0 表示成功")
+    msg: str = Field(default="accepted", description="响应消息")
+    data: TaskData = Field(..., description="任务数据")
+
+
+class ImageData(BaseModel):
+    """图片数据"""
+    image_base64: str | None = Field(default=None, description="图片 Base64")
+    image_url: str | None = Field(default=None, description="图片 OSS URL")
+
+
+class TaskStatusData(BaseModel):
+    """任务状态数据"""
+    task_id: int = Field(..., description="任务 ID")
+    status: str = Field(..., description="任务状态")
+    progress: int = Field(default=0, description="进度百分比")
+    type: str = Field(..., description="任务类型")
+    angle: str | None = Field(default=None, description="视角")
+    image: ImageData | None = Field(default=None, description="图片信息 (已完成时)")
+    error_message: str | None = Field(default=None, description="错误信息 (失败时)")
+
+
+class TaskStatusResponse(BaseModel):
+    """任务状态查询响应"""
+    code: int = Field(default=0, description="响应码")
+    msg: str = Field(default="success", description="响应消息")
+    data: TaskStatusData = Field(..., description="任务状态数据")
+
+
+class ErrorResponse(BaseModel):
+    """错误响应"""
+    code: int = Field(..., description="错误码")
+    msg: str = Field(..., description="错误消息")
+    data: None = Field(default=None, description="无数据")
