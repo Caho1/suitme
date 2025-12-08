@@ -5,9 +5,12 @@ Model Service
 包括默认模特生成、模特编辑、穿搭生成。
 """
 
+import asyncio
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.apimart_client import ApimartClient
+from app.infra.task_poller import TaskPoller
 from app.models import TaskStatus, TaskType
 from app.prompts import (
     build_default_model_prompt,
@@ -15,6 +18,7 @@ from app.prompts import (
     build_outfit_prompt,
 )
 from app.repositories.task_repository import TaskRepository
+from app.repositories.image_repository import ImageRepository
 from app.schemas import (
     DefaultModelRequest,
     EditModelRequest,
@@ -49,7 +53,42 @@ class ModelService:
         """
         self.session = session
         self.task_repo = TaskRepository(session)
+        self.image_repo = ImageRepository(session)
         self.apimart_client = apimart_client or ApimartClient()
+        self._poller = TaskPoller(
+            apimart_client=self.apimart_client,
+            on_task_completed=self._handle_task_completed,
+            on_task_failed=self._handle_task_failed,
+            on_task_progress=self._handle_task_progress,
+        )
+
+    async def _handle_task_progress(
+        self, task_id: int, status: TaskStatus, progress: int
+    ) -> None:
+        """处理任务进度更新"""
+        await self.task_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+        await self.session.commit()
+
+    async def _handle_task_completed(
+        self, task_id: int, image_base64: str | None, image_url: str | None
+    ) -> None:
+        """处理任务完成"""
+        task = await self.task_repo.get_by_id(task_id)
+        await self.task_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+        await self.image_repo.create(
+            task_id=task_id,
+            angle=task.angle if task else None,
+            image_base64=image_base64,
+            image_url=image_url,
+        )
+        await self.session.commit()
+
+    async def _handle_task_failed(self, task_id: int, error_message: str) -> None:
+        """处理任务失败"""
+        await self.task_repo.update_status(
+            task_id, TaskStatus.FAILED, error_message=error_message
+        )
+        await self.session.commit()
 
     def _build_default_model_prompt(self, request: DefaultModelRequest) -> str:
         """
@@ -104,8 +143,12 @@ class ModelService:
 
         # 4. 更新外部任务 ID
         await self.task_repo.set_external_task_id(task.id, external_task_id)
+        await self.session.commit()
 
-        # 5. 返回响应
+        # 5. 启动后台轮询
+        asyncio.create_task(self._poller.start_polling(task.id, external_task_id))
+
+        # 6. 返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
@@ -179,8 +222,12 @@ class ModelService:
 
         # 5. 更新外部任务 ID
         await self.task_repo.set_external_task_id(task.id, external_task_id)
+        await self.session.commit()
 
-        # 6. 返回响应
+        # 6. 启动后台轮询
+        asyncio.create_task(self._poller.start_polling(task.id, external_task_id))
+
+        # 7. 返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
@@ -243,8 +290,12 @@ class ModelService:
 
         # 5. 更新外部任务 ID
         await self.task_repo.set_external_task_id(task.id, external_task_id)
+        await self.session.commit()
 
-        # 6. 返回响应
+        # 6. 启动后台轮询
+        asyncio.create_task(self._poller.start_polling(task.id, external_task_id))
+
+        # 7. 返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
