@@ -116,7 +116,8 @@ class ApimartClient:
                 response = await client.post("/images/generations", json=payload)
                 ApimartErrorHandler.handle_response_error(response)
                 data = response.json()
-                return data["task_id"]
+                # Apimart 返回格式: {"code":200,"data":[{"status":"submitted","task_id":"..."}]}
+                return data["data"][0]["task_id"]
             finally:
                 if not self._http_client:
                     await client.aclose()

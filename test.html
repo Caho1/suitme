@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suitme API 测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Suitme API 测试工具</h1>
+        
+        <!-- API Base URL & Token -->
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">API Base URL</label>
+                    <input type="text" id="baseUrl" value="http://43.139.129.10:8000" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">API Token</label>
+                    <input type="text" id="apiToken" value="sk-suitme-x7K9mP2vL4nQ8wR3" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex space-x-2 mb-4">
+            <button onclick="showTab('default')" class="tab-btn px-4 py-2 bg-blue-500 text-white rounded-t-lg" data-tab="default">创建模特</button>
+            <button onclick="showTab('edit')" class="tab-btn px-4 py-2 bg-gray-300 rounded-t-lg" data-tab="edit">编辑模特</button>
+            <button onclick="showTab('outfit')" class="tab-btn px-4 py-2 bg-gray-300 rounded-t-lg" data-tab="outfit">穿搭生成</button>
+            <button onclick="showTab('task')" class="tab-btn px-4 py-2 bg-gray-300 rounded-t-lg" data-tab="task">查询任务</button>
+        </div>
+
+        <!-- 创建默认模特 -->
+        <div id="tab-default" class="tab-content bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">POST /models/default</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">request_id</label>
+                    <input type="text" id="default-request_id" value="req-001" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">user_id</label>
+                    <input type="text" id="default-user_id" value="user-123" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">gender</label>
+                    <select id="default-gender" class="w-full px-3 py-2 border rounded-md">
+                        <option value="female">female</option>
+                        <option value="male">male</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">height_cm</label>
+                    <input type="number" id="default-height" value="165" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">weight_kg</label>
+                    <input type="number" id="default-weight" value="55" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">age</label>
+                    <input type="number" id="default-age" value="25" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">skin_tone</label>
+                    <input type="text" id="default-skin_tone" value="fair" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">body_shape</label>
+                    <input type="text" id="default-body_shape" value="slim" class="w-full px-3 py-2 border rounded-md">
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">用户照片</label>
+                <input type="file" id="default-image" accept="image/*" class="w-full px-3 py-2 border rounded-md">
+                <p class="text-xs text-gray-500 mt-1">或使用测试图片（1x1像素）</p>
+            </div>
+            <button onclick="createDefault()" class="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600">发送请求</button>
+        </div>
+
+        <!-- 编辑模特 -->
+        <div id="tab-edit" class="tab-content bg-white rounded-lg shadow p-6 hidden">
+            <h2 class="text-xl font-semibold mb-4">POST /models/edit</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">request_id</label>
+                    <input type="text" id="edit-request_id" value="req-002" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">user_id</label>
+                    <input type="text" id="edit-user_id" value="user-123" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">base_model_task_id</label>
+                    <input type="number" id="edit-task_id" value="1" class="w-full px-3 py-2 border rounded-md">
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">edit_instructions</label>
+                <textarea id="edit-instructions" rows="3" class="w-full px-3 py-2 border rounded-md">将发型改为短发</textarea>
+            </div>
+            <button onclick="editModel()" class="w-full bg-green-500 text-white py-2 rounded-md hover:bg-green-600">发送请求</button>
+        </div>
+
+        <!-- 穿搭生成 -->
+        <div id="tab-outfit" class="tab-content bg-white rounded-lg shadow p-6 hidden">
+            <h2 class="text-xl font-semibold mb-4">POST /models/outfit</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">request_id</label>
+                    <input type="text" id="outfit-request_id" value="req-003" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">user_id</label>
+                    <input type="text" id="outfit-user_id" value="user-123" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">base_model_task_id</label>
+                    <input type="number" id="outfit-task_id" value="1" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">angle</label>
+                    <select id="outfit-angle" class="w-full px-3 py-2 border rounded-md">
+                        <option value="front">front</option>
+                        <option value="side">side</option>
+                        <option value="back">back</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">outfit_image_urls (每行一个URL)</label>
+                <textarea id="outfit-urls" rows="3" class="w-full px-3 py-2 border rounded-md">https://example.com/top.jpg
+https://example.com/pants.jpg</textarea>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">outfit_description (可选)</label>
+                <input type="text" id="outfit-desc" value="白色T恤搭配牛仔裤" class="w-full px-3 py-2 border rounded-md">
+            </div>
+            <button onclick="createOutfit()" class="w-full bg-purple-500 text-white py-2 rounded-md hover:bg-purple-600">发送请求</button>
+        </div>
+
+        <!-- 查询任务 -->
+        <div id="tab-task" class="tab-content bg-white rounded-lg shadow p-6 hidden">
+            <h2 class="text-xl font-semibold mb-4">GET /tasks/{task_id}</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">task_id</label>
+                <input type="number" id="query-task_id" value="1" class="w-full px-3 py-2 border rounded-md">
+            </div>
+            <button onclick="queryTask()" class="w-full bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600">查询任务</button>
+        </div>
+
+        <!-- 响应结果 -->
+        <div class="mt-6 bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-semibold mb-2">响应结果</h3>
+            <pre id="response" class="bg-gray-900 text-green-400 p-4 rounded-md overflow-auto max-h-96 text-sm">等待请求...</pre>
+        </div>
+
+        <!-- 生成的图片 -->
+        <div id="image-container" class="mt-6 bg-white rounded-lg shadow p-6 hidden">
+            <h3 class="text-lg font-semibold mb-2">生成的图片</h3>
+            <img id="result-image" class="max-w-full rounded-md mb-4" alt="生成结果">
+            <div id="image-url-container" class="hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-1">图片 URL</label>
+                <div class="flex gap-2">
+                    <input type="text" id="image-url" readonly class="flex-1 px-3 py-2 border rounded-md bg-gray-50 text-sm">
+                    <button onclick="copyUrl()" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm">复制</button>
+                    <a id="image-link" href="#" target="_blank" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm">打开</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('bg-blue-500', 'text-white');
+                el.classList.add('bg-gray-300');
+            });
+            document.getElementById('tab-' + tab).classList.remove('hidden');
+            document.querySelector(`[data-tab="${tab}"]`).classList.remove('bg-gray-300');
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('bg-blue-500', 'text-white');
+        }
+
+        function showResponse(data) {
+            document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+            const imageContainer = document.getElementById('image-container');
+            const urlContainer = document.getElementById('image-url-container');
+            const resultImage = document.getElementById('result-image');
+            const imageUrl = document.getElementById('image-url');
+            const imageLink = document.getElementById('image-link');
+            
+            // 检查是否有图片
+            const base64 = data.data?.image?.image_base64;
+            const url = data.data?.image?.image_url;
+            
+            if (base64 || url) {
+                imageContainer.classList.remove('hidden');
+                resultImage.src = base64 || url;
+                
+                if (url) {
+                    urlContainer.classList.remove('hidden');
+                    imageUrl.value = url;
+                    imageLink.href = url;
+                } else {
+                    urlContainer.classList.add('hidden');
+                }
+            } else {
+                imageContainer.classList.add('hidden');
+            }
+        }
+
+        function copyUrl() {
+            const url = document.getElementById('image-url').value;
+            navigator.clipboard.writeText(url).then(() => {
+                alert('URL 已复制到剪贴板');
+            });
+        }
+
+        async function getImageBase64() {
+            const fileInput = document.getElementById('default-image');
+            if (fileInput.files.length > 0) {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
+            }
+            return testImage;
+        }
+
+        function getHeaders() {
+            const token = document.getElementById('apiToken').value;
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+        }
+
+        async function createDefault() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            const imageBase64 = await getImageBase64();
+            const body = {
+                request_id: document.getElementById('default-request_id').value,
+                user_id: document.getElementById('default-user_id').value,
+                user_image_base64: imageBase64,
+                body_profile: {
+                    gender: document.getElementById('default-gender').value,
+                    height_cm: parseFloat(document.getElementById('default-height').value),
+                    weight_kg: parseFloat(document.getElementById('default-weight').value),
+                    age: parseInt(document.getElementById('default-age').value),
+                    skin_tone: document.getElementById('default-skin_tone').value,
+                    body_shape: document.getElementById('default-body_shape').value
+                }
+            };
+            try {
+                const res = await fetch(`${baseUrl}/models/default`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(body)
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+
+        async function editModel() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            const body = {
+                request_id: document.getElementById('edit-request_id').value,
+                user_id: document.getElementById('edit-user_id').value,
+                base_model_task_id: parseInt(document.getElementById('edit-task_id').value),
+                edit_instructions: document.getElementById('edit-instructions').value
+            };
+            try {
+                const res = await fetch(`${baseUrl}/models/edit`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(body)
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+
+        async function createOutfit() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            const urls = document.getElementById('outfit-urls').value.split('\n').filter(u => u.trim());
+            const body = {
+                request_id: document.getElementById('outfit-request_id').value,
+                user_id: document.getElementById('outfit-user_id').value,
+                base_model_task_id: parseInt(document.getElementById('outfit-task_id').value),
+                angle: document.getElementById('outfit-angle').value,
+                outfit_image_urls: urls,
+                outfit_description: document.getElementById('outfit-desc').value || undefined
+            };
+            try {
+                const res = await fetch(`${baseUrl}/models/outfit`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(body)
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+
+        async function queryTask() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            const taskId = document.getElementById('query-task_id').value;
+            try {
+                const res = await fetch(`${baseUrl}/tasks/${taskId}`, {
+                    headers: getHeaders()
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+    </script>
+</body>
+</html>
