@@ -143,7 +143,8 @@ class ApimartClient:
                 response = await client.get(f"/tasks/{external_task_id}")
                 ApimartErrorHandler.handle_response_error(response)
                 data = response.json()
-                return ApimartTaskStatus(data)
+                # Apimart 返回格式: {"code": 200, "data": {"status": "...", "result": {...}}}
+                return ApimartTaskStatus(data["data"])
             finally:
                 if not self._http_client:
                     await client.aclose()
