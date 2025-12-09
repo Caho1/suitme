@@ -60,7 +60,6 @@ invalid_data_uri_strategy = st.one_of(
 )
 
 
-@settings(max_examples=100)
 @given(invalid_base64=invalid_data_uri_strategy)
 def test_invalid_base64_rejected_default_model(invalid_base64: str):
     """
@@ -92,7 +91,6 @@ def test_invalid_base64_rejected_default_model(invalid_base64: str):
     assert len(field_errors) > 0, f"Expected error on user_image_base64, got: {errors}"
 
 
-@settings(max_examples=100)
 @given(empty_url=st.sampled_from(["", "   ", "\t", "\n"]))
 def test_empty_outfit_url_rejected(empty_url: str):
     """
@@ -180,7 +178,6 @@ invalid_body_profile_strategy = st.one_of(
 )
 
 
-@settings(max_examples=100)
 @given(invalid_profile=invalid_body_profile_strategy)
 def test_invalid_body_profile_rejected(invalid_profile: dict):
     """

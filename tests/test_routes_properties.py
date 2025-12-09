@@ -88,7 +88,7 @@ nonexistent_task_id_strategy = st.integers(min_value=100000, max_value=999999)
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -146,7 +146,7 @@ async def test_default_model_creation_returns_correct_response(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -171,15 +171,20 @@ async def test_edit_model_creation_returns_correct_response(
     
     # 首先创建一个基础模特任务
     async with await get_test_session() as session:
-        from app.repositories.task_repository import TaskRepository
-        task_repo = TaskRepository(session)
+        from app.repositories import BaseModelTaskRepository
+        task_repo = BaseModelTaskRepository(session)
         base_task = await task_repo.create(
+            task_id=f"base-{request_id}",
             request_id="base-" + request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
         await session.commit()
-        base_task_id = base_task.id
+        base_task_id = base_task.task_id
     
     # Mock Apimart client
     with patch("app.services.model_service.ApimartClient") as MockClient:
@@ -214,7 +219,7 @@ async def test_edit_model_creation_returns_correct_response(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -239,15 +244,20 @@ async def test_outfit_creation_returns_correct_response(
     
     # 首先创建一个基础模特任务
     async with await get_test_session() as session:
-        from app.repositories.task_repository import TaskRepository
-        task_repo = TaskRepository(session)
+        from app.repositories import BaseModelTaskRepository
+        task_repo = BaseModelTaskRepository(session)
         base_task = await task_repo.create(
+            task_id=f"base-outfit-{request_id}",
             request_id="base-outfit-" + request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
         await session.commit()
-        base_task_id = base_task.id
+        base_task_id = base_task.task_id
     
     # Mock Apimart client
     with patch("app.services.model_service.ApimartClient") as MockClient:
@@ -290,7 +300,7 @@ async def test_outfit_creation_returns_correct_response(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -312,15 +322,20 @@ async def test_task_query_returns_correct_info_for_submitted_task(
     
     # 创建一个任务
     async with await get_test_session() as session:
-        from app.repositories.task_repository import TaskRepository
-        task_repo = TaskRepository(session)
+        from app.repositories import BaseModelTaskRepository
+        task_repo = BaseModelTaskRepository(session)
         task = await task_repo.create(
+            task_id=f"query-{request_id}",
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
         await session.commit()
-        task_id = task.id
+        task_id = task.task_id
     
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -339,11 +354,11 @@ async def test_task_query_returns_correct_info_for_submitted_task(
         assert data["data"]["task_id"] == task_id
         assert data["data"]["status"] == "submitted"
         assert "progress" in data["data"]
-        assert data["data"]["type"] == "default"
+        assert data["data"]["type"] == "model"
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -365,31 +380,36 @@ async def test_task_query_returns_image_for_completed_task(
     
     # 创建一个已完成的任务
     async with await get_test_session() as session:
-        from app.repositories.task_repository import TaskRepository
-        from app.repositories.image_repository import ImageRepository
+        from app.repositories import BaseModelTaskRepository, ImageRepository
         
-        task_repo = TaskRepository(session)
+        task_repo = BaseModelTaskRepository(session)
         image_repo = ImageRepository(session)
         
         # 创建任务
         task = await task_repo.create(
+            task_id=f"completed-{request_id}",
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
         
         # 更新状态为 COMPLETED
-        await task_repo.update_status(task.id, TaskStatus.PROCESSING)
-        await task_repo.update_status(task.id, TaskStatus.COMPLETED, progress=100)
+        await task_repo.update_status(task.task_id, TaskStatus.PROCESSING)
+        await task_repo.update_status(task.task_id, TaskStatus.COMPLETED, progress=100)
         
         # 创建图片记录
         await image_repo.create(
+            task_type=TaskType.MODEL,
             task_id=task.id,
             image_base64="test_image_base64_data",
         )
         
         await session.commit()
-        task_id = task.id
+        task_id = task.task_id
     
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -420,7 +440,7 @@ async def test_task_query_returns_image_for_completed_task(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     nonexistent_task_id=nonexistent_task_id_strategy,
 )

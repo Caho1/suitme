@@ -20,7 +20,7 @@
 # ============== 默认模特生成 ==============
 
 DEFAULT_MODEL_PROMPT = """
-Generate a front-facing, full-body studio photograph of a digital fashion model with the following attributes:
+Generate a front-facing, full-body(from head to foot) studio photograph of a digital fashion model with the following attributes:
 - Gender: {gender}
 - Height: {height_cm} cm
 - Weight: {weight_kg} kg

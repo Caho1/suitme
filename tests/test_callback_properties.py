@@ -47,7 +47,7 @@ error_message_strategy = st.text(min_size=1, max_size=200) | st.none()
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     task_id=task_id_strategy,
     status=status_strategy,
@@ -154,7 +154,7 @@ async def test_callback_contains_required_fields(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     task_id=task_id_strategy,
     task_type=task_type_strategy,
@@ -209,7 +209,7 @@ async def test_callback_completed_task_contains_task_info(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     task_id=task_id_strategy,
     task_type=task_type_strategy,
@@ -266,7 +266,7 @@ async def test_callback_failed_task_contains_error_info(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     task_id=task_id_strategy,
     auth_token=st.text(min_size=10, max_size=100),
@@ -321,7 +321,7 @@ async def test_callback_includes_auth_token_in_header(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     task_id=task_id_strategy,
     status=status_strategy,

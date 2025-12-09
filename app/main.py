@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import get_settings
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     
     # 导入模型以确保表定义被注册
-    from app.models import AIGenerationTask, AIGenerationImage  # noqa: F401
+    from app.models import BaseModelTask, EditTask, OutfitTask, GenerationImage  # noqa: F401
     
     # 创建数据库表（开发环境）
     await create_all_tables()
@@ -124,6 +124,12 @@ def create_app() -> FastAPI:
     async def health_check() -> dict:
         """健康检查"""
         return {"status": "healthy"}
+    
+    # 测试页面
+    @app.get("/test", include_in_schema=False)
+    async def test_page() -> FileResponse:
+        """返回测试页面"""
+        return FileResponse("test.html")
     
     return app
 

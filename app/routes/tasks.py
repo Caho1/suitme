@@ -30,11 +30,14 @@ def get_task_service(session: AsyncSession = Depends(get_db_session)) -> TaskSer
     },
 )
 async def get_task_status(
-    task_id: int,
+    task_id: str,
     service: TaskService = Depends(get_task_service),
 ) -> TaskStatusResponse:
     """
     查询任务状态
+    
+    Args:
+        task_id: 任务 ID (格式: task_xxxxxxx)
     
     Requirements: 5.1, 5.2, 5.3
     """

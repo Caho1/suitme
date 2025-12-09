@@ -23,7 +23,7 @@ class ApimartTaskStatus:
     def __init__(self, data: dict[str, Any]):
         self.status: str = data.get("status", "")
         self.progress: int = data.get("progress", 0)
-        self.error: str | None = data.get("error")
+        self.error: str | dict | None = data.get("error")  # 可能是字符串或字典
         self.result: dict[str, Any] | None = data.get("result")
 
     @property

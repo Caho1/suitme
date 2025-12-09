@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     )
 
     # 数据库配置
+    # 默认使用 SQLite（服务器环境），本地通过 .env 配置 MySQL
     database_url: str = Field(
-        default="mysql+aiomysql://root:123456@localhost:3306/suitme",
+        default="sqlite+aiosqlite:///./suitme.db",
         description="数据库连接 URL",
     )
     database_echo: bool = Field(

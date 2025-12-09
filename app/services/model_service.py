@@ -17,8 +17,12 @@ from app.prompts import (
     build_edit_model_prompt,
     build_outfit_prompt,
 )
-from app.repositories.task_repository import TaskRepository
-from app.repositories.image_repository import ImageRepository
+from app.repositories import (
+    BaseModelTaskRepository,
+    EditTaskRepository,
+    OutfitTaskRepository,
+    ImageRepository,
+)
 from app.schemas import (
     DefaultModelRequest,
     EditModelRequest,
@@ -31,7 +35,7 @@ from app.schemas import (
 class BaseModelNotFoundError(Exception):
     """基础模特任务不存在异常"""
 
-    def __init__(self, task_id: int):
+    def __init__(self, task_id: str):
         self.task_id = task_id
         super().__init__(f"Base model task not found: {task_id}")
 
@@ -52,7 +56,9 @@ class ModelService:
             apimart_client: Apimart 客户端（可选，用于测试注入）
         """
         self.session = session
-        self.task_repo = TaskRepository(session)
+        self.base_model_repo = BaseModelTaskRepository(session)
+        self.edit_repo = EditTaskRepository(session)
+        self.outfit_repo = OutfitTaskRepository(session)
         self.image_repo = ImageRepository(session)
         self.apimart_client = apimart_client or ApimartClient()
         self._poller = TaskPoller(
@@ -63,31 +69,82 @@ class ModelService:
         )
 
     async def _handle_task_progress(
-        self, task_id: int, status: TaskStatus, progress: int
+        self, task_id: str, status: TaskStatus, progress: int
     ) -> None:
         """处理任务进度更新"""
-        await self.task_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+        # 尝试在三个表中查找并更新任务
+        task = await self.base_model_repo.get_by_task_id(task_id)
+        if task:
+            await self.base_model_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+        else:
+            task = await self.edit_repo.get_by_task_id(task_id)
+            if task:
+                await self.edit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+            else:
+                task = await self.outfit_repo.get_by_task_id(task_id)
+                if task:
+                    await self.outfit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
         await self.session.commit()
 
     async def _handle_task_completed(
-        self, task_id: int, image_base64: str | None, image_url: str | None
+        self, task_id: str, image_base64: str | None, image_url: str | None
     ) -> None:
         """处理任务完成"""
-        task = await self.task_repo.get_by_id(task_id)
-        await self.task_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
-        await self.image_repo.create(
-            task_id=task_id,
-            angle=task.angle if task else None,
-            image_base64=image_base64,
-            image_url=image_url,
-        )
+        # 尝试在三个表中查找任务并确定类型
+        task = await self.base_model_repo.get_by_task_id(task_id)
+        if task:
+            await self.base_model_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+            await self.image_repo.create(
+                task_type=TaskType.MODEL,
+                task_id=task.id,
+                angle=None,
+                image_base64=image_base64,
+                image_url=image_url,
+            )
+        else:
+            task = await self.edit_repo.get_by_task_id(task_id)
+            if task:
+                await self.edit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+                await self.image_repo.create(
+                    task_type=TaskType.EDIT,
+                    task_id=task.id,
+                    angle=None,
+                    image_base64=image_base64,
+                    image_url=image_url,
+                )
+            else:
+                task = await self.outfit_repo.get_by_task_id(task_id)
+                if task:
+                    await self.outfit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+                    await self.image_repo.create(
+                        task_type=TaskType.OUTFIT,
+                        task_id=task.id,
+                        angle=task.angle,
+                        image_base64=image_base64,
+                        image_url=image_url,
+                    )
         await self.session.commit()
 
-    async def _handle_task_failed(self, task_id: int, error_message: str) -> None:
+    async def _handle_task_failed(self, task_id: str, error_message: str) -> None:
         """处理任务失败"""
-        await self.task_repo.update_status(
-            task_id, TaskStatus.FAILED, error_message=error_message
-        )
+        # 尝试在三个表中查找并更新任务
+        task = await self.base_model_repo.get_by_task_id(task_id)
+        if task:
+            await self.base_model_repo.update_status(
+                task_id, TaskStatus.FAILED, error_message=error_message
+            )
+        else:
+            task = await self.edit_repo.get_by_task_id(task_id)
+            if task:
+                await self.edit_repo.update_status(
+                    task_id, TaskStatus.FAILED, error_message=error_message
+                )
+            else:
+                task = await self.outfit_repo.get_by_task_id(task_id)
+                if task:
+                    await self.outfit_repo.update_status(
+                        task_id, TaskStatus.FAILED, error_message=error_message
+                    )
         await self.session.commit()
 
     def _build_default_model_prompt(self, request: DefaultModelRequest) -> str:
@@ -123,54 +180,74 @@ class ModelService:
         Returns:
             TaskResponse: 任务创建响应
 
-        Requirements: 1.1, 1.4
+        Requirements: 2.1, 3.1
         """
-        # 1. 创建任务记录
-        task = await self.task_repo.create(
-            request_id=request.request_id,
-            user_id=request.user_id,
-            task_type=TaskType.DEFAULT,
-        )
-
-        # 2. 构建 Prompt
+        # 1. 构建 Prompt
         prompt = self._build_default_model_prompt(request)
 
-        # 3. 提交到 Apimart
-        external_task_id = await self.apimart_client.submit_generation(
+        # 2. 提交到 Apimart，获取 task_id
+        task_id = await self.apimart_client.submit_generation(
             prompt=prompt,
             image_urls=[request.user_image_base64],
+            size=request.size.value,
         )
 
-        # 4. 更新外部任务 ID
-        await self.task_repo.set_external_task_id(task.id, external_task_id)
+        # 3. 创建任务记录（使用 Apimart 返回的 task_id，存储 body_profile 字段）
+        profile = request.body_profile
+        task = await self.base_model_repo.create(
+            task_id=task_id,
+            request_id=request.request_id,
+            user_id=request.user_id,
+            gender=profile.gender,
+            height_cm=profile.height_cm,
+            weight_kg=profile.weight_kg,
+            age=profile.age,
+            skin_tone=profile.skin_tone,
+            body_shape=profile.body_shape,
+        )
         await self.session.commit()
 
-        # 5. 启动后台轮询
-        asyncio.create_task(self._poller.start_polling(task.id, external_task_id))
+        # 4. 启动后台轮询
+        asyncio.create_task(self._poller.start_polling(task_id))
 
-        # 6. 返回响应
+        # 5. 返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
             data=TaskData(
-                task_id=task.id,
+                task_id=task_id,
                 status=TaskStatus.SUBMITTED.value,
             ),
         )
 
-    async def _validate_base_model_task(self, base_model_task_id: int) -> None:
+    async def _get_base_model_image(self, base_model_task_id: str) -> tuple[int, str]:
         """
-        验证基础模特任务是否存在
+        获取基础模特任务的图片
 
         Args:
-            base_model_task_id: 基础模特任务 ID
+            base_model_task_id: 基础模特任务 ID (Apimart task_id)
+
+        Returns:
+            tuple[int, str]: (内部数据库 ID, 图片 base64 或 URL)
 
         Raises:
-            BaseModelNotFoundError: 基础模特任务不存在
+            BaseModelNotFoundError: 基础模特任务不存在或没有图片
         """
-        base_task = await self.task_repo.get_by_id(base_model_task_id)
+        base_task = await self.base_model_repo.get_by_task_id(base_model_task_id)
         if base_task is None:
             raise BaseModelNotFoundError(base_model_task_id)
+        
+        # 获取基础模特的图片
+        image = await self.image_repo.get_by_task(TaskType.MODEL, base_task.id)
+        if image is None:
+            raise BaseModelNotFoundError(f"{base_model_task_id} (no image)")
+        
+        # 优先使用 base64，否则使用 URL
+        image_data = image.image_base64 or image.image_url
+        if not image_data:
+            raise BaseModelNotFoundError(f"{base_model_task_id} (no image data)")
+        
+        return base_task.id, image_data
 
     def _build_edit_model_prompt(self, request: EditModelRequest) -> str:
         """
@@ -197,42 +274,40 @@ class ModelService:
         Raises:
             BaseModelNotFoundError: 基础模特任务不存在
 
-        Requirements: 2.1, 2.2, 2.3
+        Requirements: 2.2, 3.2
         """
-        # 1. 验证基础模特任务存在
-        await self._validate_base_model_task(request.base_model_task_id)
+        # 1. 获取基础模特图片（验证 base_model_id 存在）
+        base_internal_id, base_image = await self._get_base_model_image(request.base_model_task_id)
 
-        # 2. 创建任务记录
-        task = await self.task_repo.create(
-            request_id=request.request_id,
-            user_id=request.user_id,
-            task_type=TaskType.EDIT,
-            base_model_task_id=request.base_model_task_id,
-        )
-
-        # 3. 构建 Prompt
+        # 2. 构建 Prompt
         prompt = self._build_edit_model_prompt(request)
 
-        # 4. 提交到 Apimart（需要获取基础模特的图片作为输入）
-        # 注：实际实现中需要从 image_repository 获取基础模特图片
-        external_task_id = await self.apimart_client.submit_generation(
+        # 3. 提交到 Apimart，获取 task_id
+        task_id = await self.apimart_client.submit_generation(
             prompt=prompt,
-            image_urls=[],  # TODO: 从基础模特任务获取图片
+            image_urls=[base_image],
+            size=request.size.value,
         )
 
-        # 5. 更新外部任务 ID
-        await self.task_repo.set_external_task_id(task.id, external_task_id)
+        # 4. 创建任务记录（使用 EditTaskRepository）
+        task = await self.edit_repo.create(
+            task_id=task_id,
+            request_id=request.request_id,
+            user_id=request.user_id,
+            base_model_id=base_internal_id,
+            edit_instructions=request.edit_instructions,
+        )
         await self.session.commit()
 
-        # 6. 启动后台轮询
-        asyncio.create_task(self._poller.start_polling(task.id, external_task_id))
+        # 5. 启动后台轮询
+        asyncio.create_task(self._poller.start_polling(task_id))
 
-        # 7. 返回响应
+        # 6. 返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
             data=TaskData(
-                task_id=task.id,
+                task_id=task_id,
                 status=TaskStatus.SUBMITTED.value,
             ),
         )
@@ -265,42 +340,41 @@ class ModelService:
         Raises:
             BaseModelNotFoundError: 基础模特任务不存在
 
-        Requirements: 3.1, 3.2, 3.3, 3.4
+        Requirements: 2.3, 3.3
         """
-        # 1. 验证基础模特任务存在
-        await self._validate_base_model_task(request.base_model_task_id)
+        # 1. 获取基础模特图片（验证 base_model_id 存在）
+        base_internal_id, base_image = await self._get_base_model_image(request.base_model_task_id)
 
-        # 2. 创建任务记录
-        task = await self.task_repo.create(
-            request_id=request.request_id,
-            user_id=request.user_id,
-            task_type=TaskType.OUTFIT,
-            base_model_task_id=request.base_model_task_id,
-            angle=request.angle.value,
-        )
-
-        # 3. 构建 Prompt
+        # 2. 构建 Prompt
         prompt = self._build_outfit_prompt(request)
 
-        # 4. 提交到 Apimart（传入 1-5 张服装单品图片 URL）
-        external_task_id = await self.apimart_client.submit_generation(
+        # 3. 提交到 Apimart，获取 task_id（基础模特图片 + 服装图片）
+        task_id = await self.apimart_client.submit_generation(
             prompt=prompt,
-            image_urls=request.outfit_image_urls,
+            image_urls=[base_image] + request.outfit_image_urls,
+            size=request.size.value,
         )
 
-        # 5. 更新外部任务 ID
-        await self.task_repo.set_external_task_id(task.id, external_task_id)
+        # 4. 创建任务记录（使用 OutfitTaskRepository）
+        task = await self.outfit_repo.create(
+            task_id=task_id,
+            request_id=request.request_id,
+            user_id=request.user_id,
+            base_model_id=base_internal_id,
+            angle=request.angle.value,
+            outfit_description=request.outfit_description,
+        )
         await self.session.commit()
 
-        # 6. 启动后台轮询
-        asyncio.create_task(self._poller.start_polling(task.id, external_task_id))
+        # 5. 启动后台轮询
+        asyncio.create_task(self._poller.start_polling(task_id))
 
-        # 7. 返回响应
+        # 6. 返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
             data=TaskData(
-                task_id=task.id,
+                task_id=task_id,
                 status=TaskStatus.SUBMITTED.value,
                 angle=request.angle.value,
             ),

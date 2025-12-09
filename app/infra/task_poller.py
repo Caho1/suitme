@@ -19,7 +19,7 @@ from typing import Callable, Awaitable
 import httpx
 
 from app.config import get_settings
-from app.models import AIGenerationTask, TaskStatus
+from app.models import TaskStatus
 from app.infra.apimart_client import ApimartClient, ApimartTaskStatus
 from app.infra.apimart_errors import ApimartError
 
@@ -42,9 +42,9 @@ class TaskPoller:
     def __init__(
         self,
         apimart_client: ApimartClient | None = None,
-        on_task_completed: Callable[[int, str | None, str | None], Awaitable[None]] | None = None,
-        on_task_failed: Callable[[int, str], Awaitable[None]] | None = None,
-        on_task_progress: Callable[[int, TaskStatus, int], Awaitable[None]] | None = None,
+        on_task_completed: Callable[[str, str | None, str | None], Awaitable[None]] | None = None,
+        on_task_failed: Callable[[str, str], Awaitable[None]] | None = None,
+        on_task_progress: Callable[[str, TaskStatus, int], Awaitable[None]] | None = None,
     ):
         """
         初始化任务轮询器
@@ -60,7 +60,7 @@ class TaskPoller:
         self._on_task_completed = on_task_completed
         self._on_task_failed = on_task_failed
         self._on_task_progress = on_task_progress
-        self._active_polls: dict[int, asyncio.Task] = {}
+        self._active_polls: dict[str, asyncio.Task] = {}
         self._http_client: httpx.AsyncClient | None = None
 
     @property
@@ -99,15 +99,13 @@ class TaskPoller:
 
     async def start_polling(
         self,
-        task_id: int,
-        external_task_id: str,
+        task_id: str,
     ) -> None:
         """
         启动任务轮询
 
         Args:
-            task_id: 内部任务 ID
-            external_task_id: Apimart 外部任务 ID
+            task_id: Apimart 任务 ID
 
         Requirements: 4.1
         """
@@ -115,25 +113,23 @@ class TaskPoller:
             logger.warning(f"Task {task_id} is already being polled")
             return
 
-        logger.info(f"Starting polling for task {task_id} (external: {external_task_id})")
+        logger.info(f"Starting polling for task {task_id}")
         
         # 创建轮询任务
         poll_task = asyncio.create_task(
-            self._poll_loop(task_id, external_task_id)
+            self._poll_loop(task_id)
         )
         self._active_polls[task_id] = poll_task
 
     async def _poll_loop(
         self,
-        task_id: int,
-        external_task_id: str,
+        task_id: str,
     ) -> None:
         """
         轮询循环
 
         Args:
-            task_id: 内部任务 ID
-            external_task_id: Apimart 外部任务 ID
+            task_id: Apimart 任务 ID
 
         Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
         """
@@ -150,7 +146,7 @@ class TaskPoller:
 
                 try:
                     # 查询 Apimart 任务状态
-                    status = await self._apimart_client.get_task_status(external_task_id)
+                    status = await self._apimart_client.get_task_status(task_id)
                     
                     if status.is_completed:
                         # 任务完成
@@ -159,8 +155,14 @@ class TaskPoller:
                         return
                     
                     elif status.is_failed:
-                        # 任务失败
-                        error_msg = status.error or "Unknown error from Apimart"
+                        # 任务失败 - 确保 error_msg 是字符串
+                        error = status.error
+                        if isinstance(error, dict):
+                            error_msg = error.get("message", str(error))
+                        elif error:
+                            error_msg = str(error)
+                        else:
+                            error_msg = "Unknown error from Apimart"
                         logger.error(f"Task {task_id} failed: {error_msg}")
                         await self._handle_failed(task_id, error_msg)
                         return
@@ -190,14 +192,14 @@ class TaskPoller:
 
     async def _handle_progress(
         self,
-        task_id: int,
+        task_id: str,
         status: ApimartTaskStatus,
     ) -> None:
         """
         处理任务进度更新
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
             status: Apimart 任务状态
 
         Requirements: 4.2
@@ -210,7 +212,7 @@ class TaskPoller:
 
     async def _handle_completed(
         self,
-        task_id: int,
+        task_id: str,
         status: ApimartTaskStatus,
     ) -> None:
         """
@@ -219,7 +221,7 @@ class TaskPoller:
         下载图片并存储为 Base64 或 URL。
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
             status: Apimart 任务状态
 
         Requirements: 4.3, 1.5, 8.2
@@ -244,14 +246,14 @@ class TaskPoller:
 
     async def _handle_failed(
         self,
-        task_id: int,
+        task_id: str,
         error_message: str,
     ) -> None:
         """
         处理任务失败
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
             error_message: 错误信息
 
         Requirements: 4.4
@@ -261,13 +263,13 @@ class TaskPoller:
 
     async def _handle_timeout(
         self,
-        task_id: int,
+        task_id: str,
     ) -> None:
         """
         处理任务超时
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
 
         Requirements: 4.5
         """
@@ -298,12 +300,12 @@ class TaskPoller:
         # 返回 Data URI 格式
         return f"data:{content_type};base64,{image_data}"
 
-    def is_polling(self, task_id: int) -> bool:
+    def is_polling(self, task_id: str) -> bool:
         """
         检查任务是否正在轮询
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
 
         Returns:
             bool: 是否正在轮询

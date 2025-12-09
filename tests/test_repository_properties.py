@@ -2,15 +2,21 @@
 属性测试：Repository 层数据持久化
 
 使用 hypothesis 进行属性测试，验证数据持久化逻辑的正确性。
+更新为使用新的分离任务表结构。
 """
 
 import pytest
 from hypothesis import given, strategies as st, settings, HealthCheck
 from datetime import datetime
 
-from app.database import init_db, close_db, create_all_tables, drop_all_tables, get_session_factory
+from app.database import init_db, create_all_tables, get_session_factory
 from app.models import TaskType, TaskStatus
-from app.repositories import TaskRepository, ImageRepository
+from app.repositories import (
+    BaseModelTaskRepository,
+    EditTaskRepository,
+    OutfitTaskRepository,
+    ImageRepository,
+)
 
 
 # ============== 数据库上下文管理 ==============
@@ -50,47 +56,84 @@ user_id_strategy = st.text(
     max_size=60,
 )
 
-# 任务类型策略
-task_type_strategy = st.sampled_from([TaskType.DEFAULT, TaskType.EDIT, TaskType.OUTFIT])
+# 有效的 task_id 策略 (Apimart task_id)
+task_id_strategy = st.text(
+    alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="-_"),
+    min_size=1,
+    max_size=60,
+)
 
 # 角度策略
-angle_strategy = st.sampled_from(["front", "side", "back", None])
+angle_strategy = st.sampled_from(["front", "side", "back"])
+
+# 性别策略
+gender_strategy = st.sampled_from(["male", "female"])
+
+# 身高策略 (cm)
+height_strategy = st.floats(min_value=140.0, max_value=220.0, allow_nan=False)
+
+# 体重策略 (kg)
+weight_strategy = st.floats(min_value=30.0, max_value=150.0, allow_nan=False)
+
+# 年龄策略
+age_strategy = st.integers(min_value=18, max_value=80)
+
+# 肤色策略
+skin_tone_strategy = st.sampled_from(["fair", "medium", "olive", "tan", "dark"])
+
+# 身材类型策略
+body_shape_strategy = st.sampled_from(["slim", "athletic", "average", "curvy", None])
 
 
 # ============== Property 6: 任务创建数据持久化 ==============
-# **Feature: suitme-image-generation, Property 6: 任务创建数据持久化**
-# **Validates: Requirements 1.4, 2.3, 3.4, 8.1**
+# **Feature: database-refactor, Property 6: 任务创建数据持久化**
+# **Validates: Requirements 1.1, 2.1, 3.1**
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
+    task_id=task_id_strategy,
     request_id=request_id_strategy,
     user_id=user_id_strategy,
-    task_type=task_type_strategy,
-    angle=angle_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
+    body_shape=body_shape_strategy,
 )
-async def test_task_creation_persists_data(
+async def test_base_model_task_creation_persists_data(
+    task_id: str,
     request_id: str,
     user_id: str,
-    task_type: TaskType,
-    angle: str | None,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
+    body_shape: str | None,
 ):
     """
-    **Feature: suitme-image-generation, Property 6: 任务创建数据持久化**
+    **Feature: database-refactor, Property 6: 任务创建数据持久化**
     
-    *For any* 成功创建的任务，数据库中 SHALL 存在对应记录，
-    包含正确的 request_id、type、user_id、status="submitted"。
+    *For any* 成功创建的 BaseModelTask，数据库中 SHALL 存在对应记录，
+    包含正确的 body_profile 字段和 status="submitted"。
     """
     async with await get_test_session() as session:
-        repo = TaskRepository(session)
+        repo = BaseModelTaskRepository(session)
         
         # 创建任务
         task = await repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=task_type,
-            angle=angle if task_type == TaskType.OUTFIT else None,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
+            body_shape=body_shape,
         )
         
         # 验证任务已创建
@@ -102,122 +145,215 @@ async def test_task_creation_persists_data(
         
         # 验证数据持久化正确
         assert retrieved_task is not None
+        assert retrieved_task.task_id == task_id
         assert retrieved_task.request_id == request_id
         assert retrieved_task.user_id == user_id
-        assert retrieved_task.type == task_type
+        assert retrieved_task.gender == gender
+        assert retrieved_task.height_cm == height_cm
+        assert retrieved_task.weight_kg == weight_kg
+        assert retrieved_task.age == age
+        assert retrieved_task.skin_tone == skin_tone
+        assert retrieved_task.body_shape == body_shape
         assert retrieved_task.status == TaskStatus.SUBMITTED
-        
-        # outfit 任务验证 angle
-        if task_type == TaskType.OUTFIT:
-            assert retrieved_task.angle == angle
         
         # 回滚以便下次测试
         await session.rollback()
 
 
 @pytest.mark.asyncio
-@settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
+    base_task_id=task_id_strategy,
+    edit_task_id=task_id_strategy,
     request_id=request_id_strategy,
     user_id=user_id_strategy,
-    angle=angle_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
+    edit_instructions=st.text(min_size=1, max_size=200),
 )
-async def test_edit_outfit_task_with_base_model_task_id(
+async def test_edit_task_with_base_model_reference(
+    base_task_id: str,
+    edit_task_id: str,
     request_id: str,
     user_id: str,
-    angle: str | None,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
+    edit_instructions: str,
 ):
     """
-    **Feature: suitme-image-generation, Property 6: 任务创建数据持久化**
+    **Feature: database-refactor, Property 6: 任务创建数据持久化**
     
-    *For any* edit/outfit 任务，数据库中 SHALL 正确关联 base_model_task_id。
+    *For any* EditTask，数据库中 SHALL 正确关联 base_model_id。
     """
     async with await get_test_session() as session:
-        repo = TaskRepository(session)
+        base_repo = BaseModelTaskRepository(session)
+        edit_repo = EditTaskRepository(session)
         
-        # 先创建一个 default 任务作为基础模特
-        base_task = await repo.create(
+        # 先创建一个 BaseModelTask 作为基础模特
+        base_task = await base_repo.create(
+            task_id=base_task_id,
             request_id=f"base-{request_id}",
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
         )
         
-        # 创建 edit 任务
-        edit_task = await repo.create(
+        # 创建 EditTask
+        edit_task = await edit_repo.create(
+            task_id=edit_task_id,
             request_id=f"edit-{request_id}",
             user_id=user_id,
-            task_type=TaskType.EDIT,
-            base_model_task_id=base_task.id,
+            base_model_id=base_task.id,
+            edit_instructions=edit_instructions,
         )
         
-        # 验证 edit 任务关联正确
-        retrieved_edit = await repo.get_by_id(edit_task.id)
+        # 验证 EditTask 关联正确
+        retrieved_edit = await edit_repo.get_by_id(edit_task.id)
         assert retrieved_edit is not None
-        assert retrieved_edit.base_model_task_id == base_task.id
-        assert retrieved_edit.type == TaskType.EDIT
+        assert retrieved_edit.base_model_id == base_task.id
+        assert retrieved_edit.edit_instructions == edit_instructions
         assert retrieved_edit.status == TaskStatus.SUBMITTED
-        
-        # 创建 outfit 任务
-        outfit_task = await repo.create(
-            request_id=f"outfit-{request_id}",
-            user_id=user_id,
-            task_type=TaskType.OUTFIT,
-            base_model_task_id=base_task.id,
-            angle=angle or "front",
-        )
-        
-        # 验证 outfit 任务关联正确
-        retrieved_outfit = await repo.get_by_id(outfit_task.id)
-        assert retrieved_outfit is not None
-        assert retrieved_outfit.base_model_task_id == base_task.id
-        assert retrieved_outfit.type == TaskType.OUTFIT
-        assert retrieved_outfit.status == TaskStatus.SUBMITTED
-        assert retrieved_outfit.angle == (angle or "front")
         
         # 回滚以便下次测试
         await session.rollback()
 
+
+@pytest.mark.asyncio
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    base_task_id=task_id_strategy,
+    outfit_task_id=task_id_strategy,
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
+    angle=angle_strategy,
+    outfit_description=st.text(min_size=0, max_size=200) | st.none(),
+)
+async def test_outfit_task_with_base_model_reference(
+    base_task_id: str,
+    outfit_task_id: str,
+    request_id: str,
+    user_id: str,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
+    angle: str,
+    outfit_description: str | None,
+):
+    """
+    **Feature: database-refactor, Property 6: 任务创建数据持久化**
+    
+    *For any* OutfitTask，数据库中 SHALL 正确关联 base_model_id 和 angle。
+    """
+    async with await get_test_session() as session:
+        base_repo = BaseModelTaskRepository(session)
+        outfit_repo = OutfitTaskRepository(session)
+        
+        # 先创建一个 BaseModelTask 作为基础模特
+        base_task = await base_repo.create(
+            task_id=base_task_id,
+            request_id=f"base-{request_id}",
+            user_id=user_id,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
+        )
+        
+        # 创建 OutfitTask
+        outfit_task = await outfit_repo.create(
+            task_id=outfit_task_id,
+            request_id=f"outfit-{request_id}",
+            user_id=user_id,
+            base_model_id=base_task.id,
+            angle=angle,
+            outfit_description=outfit_description,
+        )
+        
+        # 验证 OutfitTask 关联正确
+        retrieved_outfit = await outfit_repo.get_by_id(outfit_task.id)
+        assert retrieved_outfit is not None
+        assert retrieved_outfit.base_model_id == base_task.id
+        assert retrieved_outfit.angle == angle
+        assert retrieved_outfit.outfit_description == outfit_description
+        assert retrieved_outfit.status == TaskStatus.SUBMITTED
+        
+        # 回滚以便下次测试
+        await session.rollback()
 
 
 # ============== Property 12: 任务时间戳正确更新 ==============
-# **Feature: suitme-image-generation, Property 12: 任务时间戳正确更新**
-# **Validates: Requirements 8.3, 8.4**
+# **Feature: database-refactor, Property 12: 任务时间戳正确更新**
+# **Validates: Requirements 2.1, 2.2, 2.3**
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
+    task_id=task_id_strategy,
     request_id=request_id_strategy,
     user_id=user_id_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
     new_status=st.sampled_from([TaskStatus.PROCESSING, TaskStatus.COMPLETED, TaskStatus.FAILED]),
     progress=st.integers(min_value=0, max_value=100),
 )
 async def test_task_timestamp_updated_on_status_change(
+    task_id: str,
     request_id: str,
     user_id: str,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
     new_status: TaskStatus,
     progress: int,
 ):
     """
-    **Feature: suitme-image-generation, Property 12: 任务时间戳正确更新**
+    **Feature: database-refactor, Property 12: 任务时间戳正确更新**
     
     *For any* 任务状态更新，updated_at 字段 SHALL 被更新。
     """
     async with await get_test_session() as session:
-        repo = TaskRepository(session)
+        repo = BaseModelTaskRepository(session)
         
         # 创建任务
         task = await repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
         )
         
         original_updated_at = task.updated_at
         
         # 更新状态
         updated_task = await repo.update_status(
-            task_id=task.id,
+            task_id=task_id,
             status=new_status,
             progress=progress,
         )
@@ -236,28 +372,45 @@ async def test_task_timestamp_updated_on_status_change(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
+    task_id=task_id_strategy,
     request_id=request_id_strategy,
     user_id=user_id_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
 )
 async def test_completed_at_set_on_completion(
+    task_id: str,
     request_id: str,
     user_id: str,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
 ):
     """
-    **Feature: suitme-image-generation, Property 12: 任务时间戳正确更新**
+    **Feature: database-refactor, Property 12: 任务时间戳正确更新**
     
     *For any* 任务完成时，completed_at 字段 SHALL 被设置。
     """
     async with await get_test_session() as session:
-        repo = TaskRepository(session)
+        repo = BaseModelTaskRepository(session)
         
         # 创建任务
         task = await repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
         )
         
         # 初始状态 completed_at 应为 None
@@ -265,7 +418,7 @@ async def test_completed_at_set_on_completion(
         
         # 更新为 COMPLETED 状态
         completed_task = await repo.update_status(
-            task_id=task.id,
+            task_id=task_id,
             status=TaskStatus.COMPLETED,
             progress=100,
         )
@@ -281,30 +434,47 @@ async def test_completed_at_set_on_completion(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
+    task_id=task_id_strategy,
     request_id=request_id_strategy,
     user_id=user_id_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
     error_message=st.text(min_size=1, max_size=200),
 )
 async def test_completed_at_set_on_failure(
+    task_id: str,
     request_id: str,
     user_id: str,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
     error_message: str,
 ):
     """
-    **Feature: suitme-image-generation, Property 12: 任务时间戳正确更新**
+    **Feature: database-refactor, Property 12: 任务时间戳正确更新**
     
     *For any* 任务失败时，completed_at 字段 SHALL 被设置，error_message 被记录。
     """
     async with await get_test_session() as session:
-        repo = TaskRepository(session)
+        repo = BaseModelTaskRepository(session)
         
         # 创建任务
         task = await repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
         )
         
         # 初始状态 completed_at 应为 None
@@ -312,7 +482,7 @@ async def test_completed_at_set_on_failure(
         
         # 更新为 FAILED 状态
         failed_task = await repo.update_status(
-            task_id=task.id,
+            task_id=task_id,
             status=TaskStatus.FAILED,
             error_message=error_message,
         )

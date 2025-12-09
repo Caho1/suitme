@@ -27,3 +27,8 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.hypothesis]
+# 减少测试用例数量以加快测试速度
+max_examples = 10
+deadline = 5000

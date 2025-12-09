@@ -1,7 +1,11 @@
 """
 SQLAlchemy Database Models
 
-定义数据库表结构，包含任务和图片两个核心表。
+定义数据库表结构，包含三种任务类型和图片表。
+- BaseModelTask: 模特生成任务
+- EditTask: 模特编辑任务
+- OutfitTask: 穿搭生成任务
+- GenerationImage: 生成图片
 """
 
 from datetime import datetime
@@ -10,12 +14,14 @@ from enum import Enum as PyEnum
 from sqlalchemy import (
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
     Text,
     func,
 )
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -25,7 +31,7 @@ from app.database import Base
 
 class TaskType(str, PyEnum):
     """任务类型枚举"""
-    DEFAULT = "default"
+    MODEL = "model"
     EDIT = "edit"
     OUTFIT = "outfit"
 
@@ -40,28 +46,35 @@ class TaskStatus(str, PyEnum):
 
 # ============== 数据库模型 ==============
 
-class AIGenerationTask(Base):
+class BaseModelTask(Base):
     """
-    AI 生成任务表
+    模特生成任务表 (F1)
     
-    存储所有生图任务的元数据和状态信息。
+    存储根据用户照片和身体参数生成数字模特的任务。
+    包含完整的 body_profile 字段。
     """
-    __tablename__ = "ai_generation_task"
+    __tablename__ = "base_model_task"
+    __table_args__ = {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(
+        String(128), 
+        nullable=False, 
+        unique=True, 
+        index=True,
+    )
     request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    external_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    type: Mapped[TaskType] = mapped_column(
-        Enum(TaskType, native_enum=False, length=20),
-        nullable=False,
-    )
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    base_model_task_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("ai_generation_task.id"),
-        nullable=True,
-    )
-    angle: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    
+    # Body profile fields
+    gender: Mapped[str] = mapped_column(String(20), nullable=False)
+    height_cm: Mapped[float] = mapped_column(Float, nullable=False)
+    weight_kg: Mapped[float] = mapped_column(Float, nullable=False)
+    age: Mapped[int] = mapped_column(Integer, nullable=False)
+    skin_tone: Mapped[str] = mapped_column(String(50), nullable=False)
+    body_shape: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    
+    # Status fields
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, native_enum=False, length=20),
         nullable=False,
@@ -69,6 +82,8 @@ class AIGenerationTask(Base):
     )
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
@@ -82,57 +97,198 @@ class AIGenerationTask(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    # 关系
-    images: Mapped[list["AIGenerationImage"]] = relationship(
-        "AIGenerationImage",
-        back_populates="task",
+    # Relationships
+    edit_tasks: Mapped[list["EditTask"]] = relationship(
+        "EditTask",
+        back_populates="base_model",
         cascade="all, delete-orphan",
     )
-    base_model_task: Mapped["AIGenerationTask | None"] = relationship(
-        "AIGenerationTask",
-        remote_side=[id],
-        foreign_keys=[base_model_task_id],
+    outfit_tasks: Mapped[list["OutfitTask"]] = relationship(
+        "OutfitTask",
+        back_populates="base_model",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
         return (
-            f"<AIGenerationTask(id={self.id}, type={self.type}, "
+            f"<BaseModelTask(id={self.id}, task_id={self.task_id}, "
             f"status={self.status}, user_id={self.user_id})>"
         )
 
 
-class AIGenerationImage(Base):
+class EditTask(Base):
     """
-    AI 生成图片表
+    模特编辑任务表 (F2)
     
-    存储任务完成后生成的图片数据。
+    存储在已有模特基础上进行局部调整的任务。
+    通过 base_model_id 关联到 BaseModelTask。
     """
-    __tablename__ = "ai_generation_image"
+    __tablename__ = "edit_task"
+    __table_args__ = {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    task_id: Mapped[int] = mapped_column(
+    task_id: Mapped[str] = mapped_column(
+        String(128), 
+        nullable=False, 
+        unique=True, 
+        index=True,
+    )
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    
+    # Foreign key to base model
+    base_model_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("ai_generation_task.id", ondelete="CASCADE"),
+        ForeignKey("base_model_task.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+    
+    # Edit specific fields
+    edit_instructions: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Status fields
+    status: Mapped[TaskStatus] = mapped_column(
+        Enum(TaskStatus, native_enum=False, length=20),
+        nullable=False,
+        default=TaskStatus.SUBMITTED,
+    )
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    base_model: Mapped["BaseModelTask"] = relationship(
+        "BaseModelTask",
+        back_populates="edit_tasks",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<EditTask(id={self.id}, task_id={self.task_id}, "
+            f"base_model_id={self.base_model_id}, status={self.status})>"
+        )
+
+
+class OutfitTask(Base):
+    """
+    穿搭生成任务表 (F3)
+    
+    存储将服装穿到数字模特上的任务。
+    通过 base_model_id 关联到 BaseModelTask。
+    """
+    __tablename__ = "outfit_task"
+    __table_args__ = {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(
+        String(128), 
+        nullable=False, 
+        unique=True, 
+        index=True,
+    )
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    
+    # Foreign key to base model
+    base_model_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("base_model_task.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    
+    # Outfit specific fields
+    angle: Mapped[str] = mapped_column(String(20), nullable=False)  # front/side/back
+    outfit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # Status fields
+    status: Mapped[TaskStatus] = mapped_column(
+        Enum(TaskStatus, native_enum=False, length=20),
+        nullable=False,
+        default=TaskStatus.SUBMITTED,
+    )
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    base_model: Mapped["BaseModelTask"] = relationship(
+        "BaseModelTask",
+        back_populates="outfit_tasks",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<OutfitTask(id={self.id}, task_id={self.task_id}, "
+            f"base_model_id={self.base_model_id}, angle={self.angle}, status={self.status})>"
+        )
+
+
+class GenerationImage(Base):
+    """
+    生成图片表
+    
+    存储任务完成后生成的图片数据。
+    使用 task_type 和 task_id 实现多态关联到不同任务表。
+    """
+    __tablename__ = "generation_image"
+    __table_args__ = {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    
+    # Polymorphic reference to task
+    task_type: Mapped[str] = mapped_column(
+        Enum(TaskType, native_enum=False, length=20),
+        nullable=False,
+        index=True,
+    )
+    task_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+    )
+    
+    # Image data
     angle: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    image_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_base64: Mapped[str | None] = mapped_column(LONGTEXT, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    
+    # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
         server_default=func.now(),
     )
 
-    # 关系
-    task: Mapped["AIGenerationTask"] = relationship(
-        "AIGenerationTask",
-        back_populates="images",
-    )
-
     def __repr__(self) -> str:
         return (
-            f"<AIGenerationImage(id={self.id}, task_id={self.task_id}, "
-            f"angle={self.angle})>"
+            f"<GenerationImage(id={self.id}, task_type={self.task_type}, "
+            f"task_id={self.task_id}, angle={self.angle})>"
         )

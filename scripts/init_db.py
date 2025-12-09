@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config import get_settings
 from app.database import init_db, create_all_tables, close_db
-from app.models import AIGenerationTask, AIGenerationImage  # noqa: F401
+from app.models import BaseModelTask, EditTask, OutfitTask, GenerationImage  # noqa: F401
 
 
 async def main():

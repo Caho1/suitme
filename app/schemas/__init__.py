@@ -22,6 +22,20 @@ class AngleType(str, Enum):
     BACK = "back"
 
 
+class ImageSize(str, Enum):
+    """图片尺寸比例枚举"""
+    RATIO_1_1 = "1:1"
+    RATIO_2_3 = "2:3"
+    RATIO_3_2 = "3:2"
+    RATIO_3_4 = "3:4"
+    RATIO_4_3 = "4:3"
+    RATIO_4_5 = "4:5"
+    RATIO_5_4 = "5:4"
+    RATIO_9_16 = "9:16"
+    RATIO_16_9 = "16:9"
+    RATIO_21_9 = "21:9"
+
+
 # ============== 通用模型 ==============
 
 class BodyProfile(BaseModel):
@@ -90,6 +104,7 @@ class DefaultModelRequest(BaseModel):
     user_id: str = Field(..., min_length=1, description="用户 ID")
     user_image_base64: str = Field(..., description="用户正面照片 (Data URI 格式)")
     body_profile: BodyProfile = Field(..., description="用户身体参数")
+    size: ImageSize = Field(default=ImageSize.RATIO_4_3, description="生成图片比例")
 
     @field_validator("user_image_base64")
     @classmethod
@@ -101,15 +116,16 @@ class EditModelRequest(BaseModel):
     """模特编辑请求"""
     request_id: str = Field(..., min_length=1, description="请求唯一标识")
     user_id: str = Field(..., min_length=1, description="用户 ID")
-    base_model_task_id: int = Field(..., gt=0, description="基础模特任务 ID")
+    base_model_task_id: str = Field(..., min_length=1, description="基础模特任务 ID (格式: task_xxxxxxx)")
     edit_instructions: str = Field(..., min_length=1, description="编辑指令")
+    size: ImageSize = Field(default=ImageSize.RATIO_4_3, description="生成图片比例")
 
 
 class OutfitModelRequest(BaseModel):
     """穿搭生成请求"""
     request_id: str = Field(..., min_length=1, description="请求唯一标识")
     user_id: str = Field(..., min_length=1, description="用户 ID")
-    base_model_task_id: int = Field(..., gt=0, description="基础模特任务 ID")
+    base_model_task_id: str = Field(..., min_length=1, description="基础模特任务 ID (格式: task_xxxxxxx)")
     angle: AngleType = Field(..., description="视角: front/side/back")
     outfit_image_urls: list[str] = Field(
         ...,
@@ -118,6 +134,7 @@ class OutfitModelRequest(BaseModel):
         description="服装单品图片路径列表 (1-5 张，支持 URL 或本地路径)",
     )
     outfit_description: str | None = Field(default=None, description="服装描述")
+    size: ImageSize = Field(default=ImageSize.RATIO_4_3, description="生成图片比例")
 
     @field_validator("outfit_image_urls")
     @classmethod
@@ -133,7 +150,7 @@ class OutfitModelRequest(BaseModel):
 
 class TaskData(BaseModel):
     """任务数据"""
-    task_id: int = Field(..., description="任务 ID")
+    task_id: str = Field(..., description="任务 ID (格式: task_xxxxxxx)")
     status: str = Field(..., description="任务状态")
     angle: str | None = Field(default=None, description="视角 (仅穿搭任务)")
 
@@ -153,7 +170,7 @@ class ImageData(BaseModel):
 
 class TaskStatusData(BaseModel):
     """任务状态数据"""
-    task_id: int = Field(..., description="任务 ID")
+    task_id: str = Field(..., description="任务 ID (格式: task_xxxxxxx)")
     status: str = Field(..., description="任务状态")
     progress: int = Field(default=0, description="进度百分比")
     type: str = Field(..., description="任务类型")

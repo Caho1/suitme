@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from app.database import init_db, create_all_tables, get_session_factory
 from app.models import TaskType, TaskStatus
-from app.repositories import TaskRepository
+from app.repositories import BaseModelTaskRepository, EditTaskRepository, OutfitTaskRepository, ImageRepository
 from app.services.model_service import ModelService, BaseModelNotFoundError
 from app.schemas import EditModelRequest, OutfitModelRequest, AngleType
 
@@ -24,6 +24,7 @@ async def ensure_db_initialized():
     """确保数据库已初始化"""
     global _db_initialized
     if not _db_initialized:
+        # 使用内存数据库进行测试
         init_db("sqlite+aiosqlite:///:memory:", echo=False)
         await create_all_tables()
         _db_initialized = True
@@ -72,7 +73,7 @@ VALID_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -97,11 +98,12 @@ async def test_edit_model_rejects_nonexistent_base_model_task_id(
         
         service = ModelService(session, apimart_client=mock_apimart)
         
-        # 构建请求
+        # 构建请求（使用字符串 task_id）
+        nonexistent_task_id_str = f"task_{nonexistent_task_id}"
         request = EditModelRequest(
             request_id=request_id,
             user_id=user_id,
-            base_model_task_id=nonexistent_task_id,
+            base_model_task_id=nonexistent_task_id_str,
             edit_instructions=edit_instructions,
         )
         
@@ -109,7 +111,7 @@ async def test_edit_model_rejects_nonexistent_base_model_task_id(
         with pytest.raises(BaseModelNotFoundError) as exc_info:
             await service.edit_model(request)
         
-        assert exc_info.value.task_id == nonexistent_task_id
+        assert exc_info.value.task_id == nonexistent_task_id_str
         
         # 验证 Apimart 客户端未被调用
         mock_apimart.submit_generation.assert_not_called()
@@ -119,7 +121,7 @@ async def test_edit_model_rejects_nonexistent_base_model_task_id(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -144,11 +146,12 @@ async def test_outfit_rejects_nonexistent_base_model_task_id(
         
         service = ModelService(session, apimart_client=mock_apimart)
         
-        # 构建请求
+        # 构建请求（使用字符串 task_id）
+        nonexistent_task_id_str = f"task_{nonexistent_task_id}"
         request = OutfitModelRequest(
             request_id=request_id,
             user_id=user_id,
-            base_model_task_id=nonexistent_task_id,
+            base_model_task_id=nonexistent_task_id_str,
             angle=angle,
             outfit_image_urls=["https://example.com/outfit.jpg"],
         )
@@ -157,7 +160,7 @@ async def test_outfit_rejects_nonexistent_base_model_task_id(
         with pytest.raises(BaseModelNotFoundError) as exc_info:
             await service.create_outfit(request)
         
-        assert exc_info.value.task_id == nonexistent_task_id
+        assert exc_info.value.task_id == nonexistent_task_id_str
         
         # 验证 Apimart 客户端未被调用
         mock_apimart.submit_generation.assert_not_called()
@@ -191,7 +194,7 @@ ALL_STATUSES = [TaskStatus.SUBMITTED, TaskStatus.PROCESSING, TaskStatus.COMPLETE
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -206,24 +209,30 @@ async def test_valid_status_transition_submitted_to_processing(
     *For any* 任务，状态转换 submitted → processing SHALL 成功。
     """
     async with await get_test_session() as session:
-        task_repo = TaskRepository(session)
+        task_repo = BaseModelTaskRepository(session)
         task_service = TaskService(session)
         
         # 创建任务（初始状态为 SUBMITTED）
+        task_id = f"task_{request_id}"
         task = await task_repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
         
         # 验证初始状态
         assert task.status == TaskStatus.SUBMITTED
         
         # 转换到 PROCESSING
-        await task_service.update_task_status(task.id, TaskStatus.PROCESSING, progress=50)
+        await task_service.update_task_status(task_id, TaskStatus.PROCESSING, progress=50)
         
         # 验证状态已更新
-        updated_task = await task_repo.get_by_id(task.id)
+        updated_task = await task_repo.get_by_task_id(task_id)
         assert updated_task is not None
         assert updated_task.status == TaskStatus.PROCESSING
         assert updated_task.progress == 50
@@ -232,7 +241,7 @@ async def test_valid_status_transition_submitted_to_processing(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -247,25 +256,31 @@ async def test_valid_status_transition_processing_to_completed(
     *For any* 任务，状态转换 processing → completed SHALL 成功。
     """
     async with await get_test_session() as session:
-        task_repo = TaskRepository(session)
+        task_repo = BaseModelTaskRepository(session)
         task_service = TaskService(session)
         
         # 创建任务并转换到 PROCESSING
+        task_id = f"task_{request_id}"
         task = await task_repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
-        await task_repo.update_status(task.id, TaskStatus.PROCESSING, progress=50)
+        await task_repo.update_status(task_id, TaskStatus.PROCESSING, progress=50)
         
         # 完成任务
         await task_service.complete_task(
-            task.id,
+            task_id,
             image_base64="test_base64_data",
         )
         
         # 验证状态已更新
-        updated_task = await task_repo.get_by_id(task.id)
+        updated_task = await task_repo.get_by_task_id(task_id)
         assert updated_task is not None
         assert updated_task.status == TaskStatus.COMPLETED
         assert updated_task.progress == 100
@@ -275,7 +290,7 @@ async def test_valid_status_transition_processing_to_completed(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     request_id=request_id_strategy,
     user_id=user_id_strategy,
@@ -292,34 +307,46 @@ async def test_valid_status_transition_to_failed(
     *For any* 任务，状态转换 submitted/processing → failed SHALL 成功。
     """
     async with await get_test_session() as session:
-        task_repo = TaskRepository(session)
+        task_repo = BaseModelTaskRepository(session)
         task_service = TaskService(session)
         
         # 测试从 SUBMITTED 转换到 FAILED
+        task_id1 = f"task_fail1_{request_id}"
         task1 = await task_repo.create(
+            task_id=task_id1,
             request_id=f"fail1-{request_id}",
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
         
-        await task_service.fail_task(task1.id, error_message)
+        await task_service.fail_task(task_id1, error_message)
         
-        updated_task1 = await task_repo.get_by_id(task1.id)
+        updated_task1 = await task_repo.get_by_task_id(task_id1)
         assert updated_task1 is not None
         assert updated_task1.status == TaskStatus.FAILED
         assert updated_task1.error_message == error_message
         
         # 测试从 PROCESSING 转换到 FAILED
+        task_id2 = f"task_fail2_{request_id}"
         task2 = await task_repo.create(
+            task_id=task_id2,
             request_id=f"fail2-{request_id}",
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
-        await task_repo.update_status(task2.id, TaskStatus.PROCESSING)
+        await task_repo.update_status(task_id2, TaskStatus.PROCESSING)
         
-        await task_service.fail_task(task2.id, error_message)
+        await task_service.fail_task(task_id2, error_message)
         
-        updated_task2 = await task_repo.get_by_id(task2.id)
+        updated_task2 = await task_repo.get_by_task_id(task_id2)
         assert updated_task2 is not None
         assert updated_task2.status == TaskStatus.FAILED
         
@@ -342,19 +369,25 @@ async def test_invalid_status_transition_skip_processing(
     *For any* 任务，不允许跳过中间状态：submitted → completed SHALL 失败。
     """
     async with await get_test_session() as session:
-        task_repo = TaskRepository(session)
+        task_repo = BaseModelTaskRepository(session)
         task_service = TaskService(session)
         
         # 创建任务（初始状态为 SUBMITTED）
+        task_id = f"task_{request_id}"
         task = await task_repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
         
         # 尝试直接跳到 COMPLETED（应该失败）
         with pytest.raises(InvalidStatusTransitionError) as exc_info:
-            await task_service.complete_task(task.id, image_base64="test")
+            await task_service.complete_task(task_id, image_base64="test")
         
         assert exc_info.value.current_status == TaskStatus.SUBMITTED
         assert exc_info.value.target_status == TaskStatus.COMPLETED
@@ -378,21 +411,27 @@ async def test_invalid_status_transition_reverse(
     *For any* 任务，不允许逆向转换：completed → processing SHALL 失败。
     """
     async with await get_test_session() as session:
-        task_repo = TaskRepository(session)
+        task_repo = BaseModelTaskRepository(session)
         task_service = TaskService(session)
         
         # 创建任务并完成
+        task_id = f"task_{request_id}"
         task = await task_repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
-        await task_repo.update_status(task.id, TaskStatus.PROCESSING)
-        await task_repo.update_status(task.id, TaskStatus.COMPLETED)
+        await task_repo.update_status(task_id, TaskStatus.PROCESSING)
+        await task_repo.update_status(task_id, TaskStatus.COMPLETED)
         
         # 尝试逆向转换（应该失败）
         with pytest.raises(InvalidStatusTransitionError) as exc_info:
-            await task_service.update_task_status(task.id, TaskStatus.PROCESSING)
+            await task_service.update_task_status(task_id, TaskStatus.PROCESSING)
         
         assert exc_info.value.current_status == TaskStatus.COMPLETED
         assert exc_info.value.target_status == TaskStatus.PROCESSING
@@ -416,22 +455,28 @@ async def test_invalid_status_transition_from_failed(
     *For any* 已失败的任务，不允许任何状态转换。
     """
     async with await get_test_session() as session:
-        task_repo = TaskRepository(session)
+        task_repo = BaseModelTaskRepository(session)
         task_service = TaskService(session)
         
         # 创建任务并标记失败
+        task_id = f"task_{request_id}"
         task = await task_repo.create(
+            task_id=task_id,
             request_id=request_id,
             user_id=user_id,
-            task_type=TaskType.DEFAULT,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
         )
-        await task_repo.update_status(task.id, TaskStatus.FAILED, error_message="test error")
+        await task_repo.update_status(task_id, TaskStatus.FAILED, error_message="test error")
         
         # 尝试从 FAILED 转换到其他状态（应该失败）
         with pytest.raises(InvalidStatusTransitionError):
-            await task_service.update_task_status(task.id, TaskStatus.PROCESSING)
+            await task_service.update_task_status(task_id, TaskStatus.PROCESSING)
         
         with pytest.raises(InvalidStatusTransitionError):
-            await task_service.complete_task(task.id, image_base64="test")
+            await task_service.complete_task(task_id, image_base64="test")
         
         await session.rollback()

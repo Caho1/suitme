@@ -12,9 +12,13 @@ from typing import Callable, Awaitable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import TaskStatus
-from app.repositories.task_repository import TaskRepository
-from app.repositories.image_repository import ImageRepository
+from app.models import TaskStatus, TaskType
+from app.repositories import (
+    BaseModelTaskRepository,
+    EditTaskRepository,
+    OutfitTaskRepository,
+    ImageRepository,
+)
 from app.infra.task_poller import TaskPoller
 from app.infra.apimart_client import ApimartClient
 
@@ -43,7 +47,9 @@ class PollingService:
             on_callback: 任务完成/失败后的回调函数 (task_id, status, error_message)
         """
         self.session = session
-        self.task_repo = TaskRepository(session)
+        self.base_model_repo = BaseModelTaskRepository(session)
+        self.edit_repo = EditTaskRepository(session)
+        self.outfit_repo = OutfitTaskRepository(session)
         self.image_repo = ImageRepository(session)
         self._on_callback = on_callback
         
@@ -59,21 +65,47 @@ class PollingService:
         """关闭资源"""
         await self._poller.close()
 
-    async def start_polling(self, task_id: int, external_task_id: str) -> None:
+    async def _find_task_by_task_id(self, task_id: str) -> tuple[object, TaskType] | None:
+        """
+        在三个表中查找任务
+
+        Args:
+            task_id: Apimart 任务 ID
+
+        Returns:
+            tuple[task, task_type] 或 None
+        """
+        # 先在 base_model_task 表中查找
+        task = await self.base_model_repo.get_by_task_id(task_id)
+        if task:
+            return task, TaskType.MODEL
+        
+        # 再在 edit_task 表中查找
+        task = await self.edit_repo.get_by_task_id(task_id)
+        if task:
+            return task, TaskType.EDIT
+        
+        # 最后在 outfit_task 表中查找
+        task = await self.outfit_repo.get_by_task_id(task_id)
+        if task:
+            return task, TaskType.OUTFIT
+        
+        return None
+
+    async def start_polling(self, task_id: str) -> None:
         """
         启动任务轮询
 
         Args:
-            task_id: 内部任务 ID
-            external_task_id: Apimart 外部任务 ID
+            task_id: Apimart 任务 ID
 
         Requirements: 4.1
         """
-        await self._poller.start_polling(task_id, external_task_id)
+        await self._poller.start_polling(task_id)
 
     async def _handle_task_progress(
         self,
-        task_id: int,
+        task_id: str,
         status: TaskStatus,
         progress: int,
     ) -> None:
@@ -81,33 +113,37 @@ class PollingService:
         处理任务进度更新
 
         Args:
-            task_id: 任务 ID
+            task_id: Apimart 任务 ID
             status: 任务状态
             progress: 进度百分比
 
         Requirements: 4.2
         """
         try:
-            task = await self.task_repo.get_by_id(task_id)
-            if task is None:
+            result = await self._find_task_by_task_id(task_id)
+            if result is None:
                 logger.error(f"Task {task_id} not found for progress update")
                 return
 
+            task, task_type = result
+
             # 只有当状态需要更新时才更新
             if task.status == TaskStatus.SUBMITTED:
-                await self.task_repo.update_status(
-                    task_id=task_id,
-                    status=TaskStatus.PROCESSING,
-                    progress=progress,
-                )
+                if task_type == TaskType.MODEL:
+                    await self.base_model_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+                elif task_type == TaskType.EDIT:
+                    await self.edit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+                else:
+                    await self.outfit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
                 await self.session.commit()
                 logger.info(f"Task {task_id} status updated to PROCESSING, progress: {progress}%")
             elif task.status == TaskStatus.PROCESSING and task.progress != progress:
-                await self.task_repo.update_status(
-                    task_id=task_id,
-                    status=TaskStatus.PROCESSING,
-                    progress=progress,
-                )
+                if task_type == TaskType.MODEL:
+                    await self.base_model_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+                elif task_type == TaskType.EDIT:
+                    await self.edit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+                else:
+                    await self.outfit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
                 await self.session.commit()
                 logger.debug(f"Task {task_id} progress updated to {progress}%")
 
@@ -117,39 +153,46 @@ class PollingService:
 
     async def _handle_task_completed(
         self,
-        task_id: int,
+        task_id: str,
         image_base64: str | None,
         image_url: str | None,
     ) -> None:
         """
         处理任务完成
 
-        下载图片、存储 Base64/上传 OSS、写入 ai_generation_image 表。
+        下载图片、存储 Base64/上传 OSS、写入 generation_image 表。
 
         Args:
-            task_id: 任务 ID
+            task_id: Apimart 任务 ID
             image_base64: 图片 Base64 数据
             image_url: 图片 URL
 
         Requirements: 4.3, 1.5, 8.2
         """
         try:
-            task = await self.task_repo.get_by_id(task_id)
-            if task is None:
+            result = await self._find_task_by_task_id(task_id)
+            if result is None:
                 logger.error(f"Task {task_id} not found for completion")
                 return
 
+            task, task_type = result
+
             # 更新任务状态为 COMPLETED
-            await self.task_repo.update_status(
-                task_id=task_id,
-                status=TaskStatus.COMPLETED,
-                progress=100,
-            )
+            if task_type == TaskType.MODEL:
+                await self.base_model_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+            elif task_type == TaskType.EDIT:
+                await self.edit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+            else:
+                await self.outfit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+
+            # 获取 angle（只有 outfit 任务有 angle）
+            angle = getattr(task, 'angle', None)
 
             # 创建图片记录
             await self.image_repo.create(
-                task_id=task_id,
-                angle=task.angle,
+                task_type=task_type,
+                task_id=task.id,
+                angle=angle,
                 image_base64=image_base64,
                 image_url=image_url,
             )
@@ -159,7 +202,7 @@ class PollingService:
 
             # 触发回调
             if self._on_callback:
-                await self._on_callback(task_id, "completed", None)
+                await self._on_callback(task.id, "completed", None)
 
         except Exception as e:
             logger.exception(f"Error completing task {task_id}: {e}")
@@ -167,43 +210,46 @@ class PollingService:
 
     async def _handle_task_failed(
         self,
-        task_id: int,
+        task_id: str,
         error_message: str,
     ) -> None:
         """
         处理任务失败
 
         Args:
-            task_id: 任务 ID
+            task_id: Apimart 任务 ID
             error_message: 错误信息
 
         Requirements: 4.4, 4.5
         """
         try:
-            task = await self.task_repo.get_by_id(task_id)
-            if task is None:
+            result = await self._find_task_by_task_id(task_id)
+            if result is None:
                 logger.error(f"Task {task_id} not found for failure handling")
                 return
 
+            task, task_type = result
+
             # 更新任务状态为 FAILED
-            await self.task_repo.update_status(
-                task_id=task_id,
-                status=TaskStatus.FAILED,
-                error_message=error_message,
-            )
+            if task_type == TaskType.MODEL:
+                await self.base_model_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
+            elif task_type == TaskType.EDIT:
+                await self.edit_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
+            else:
+                await self.outfit_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
 
             await self.session.commit()
             logger.info(f"Task {task_id} marked as failed: {error_message}")
 
             # 触发回调
             if self._on_callback:
-                await self._on_callback(task_id, "failed", error_message)
+                await self._on_callback(task.id, "failed", error_message)
 
         except Exception as e:
             logger.exception(f"Error handling task {task_id} failure: {e}")
             await self.session.rollback()
 
-    def is_polling(self, task_id: int) -> bool:
+    def is_polling(self, task_id: str) -> bool:
         """检查任务是否正在轮询"""
         return self._poller.is_polling(task_id)
 

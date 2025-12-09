@@ -6,6 +6,7 @@ from app.services.task_service import (
     TaskNotFoundError,
     InvalidStatusTransitionError,
 )
+from app.services.task_query_service import TaskQueryService, TaskQueryResult
 from app.services.polling_service import PollingService
 
 __all__ = [
@@ -14,5 +15,7 @@ __all__ = [
     "TaskService",
     "TaskNotFoundError",
     "InvalidStatusTransitionError",
+    "TaskQueryService",
+    "TaskQueryResult",
     "PollingService",
 ]

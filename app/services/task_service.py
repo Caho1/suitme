@@ -7,21 +7,26 @@ Task Service
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import TaskStatus
-from app.repositories.task_repository import TaskRepository
-from app.repositories.image_repository import ImageRepository
+from app.models import TaskStatus, TaskType
+from app.repositories import (
+    BaseModelTaskRepository,
+    EditTaskRepository,
+    OutfitTaskRepository,
+    ImageRepository,
+)
 from app.schemas import (
     ImageData,
     TaskStatusData,
     TaskStatusResponse,
     ErrorResponse,
 )
+from app.services.task_query_service import TaskQueryService
 
 
 class TaskNotFoundError(Exception):
     """任务不存在异常"""
 
-    def __init__(self, task_id: int):
+    def __init__(self, task_id: str):
         self.task_id = task_id
         super().__init__(f"Task not found: {task_id}")
 
@@ -57,8 +62,11 @@ class TaskService:
             session: 数据库会话
         """
         self.session = session
-        self.task_repo = TaskRepository(session)
+        self.base_model_repo = BaseModelTaskRepository(session)
+        self.edit_repo = EditTaskRepository(session)
+        self.outfit_repo = OutfitTaskRepository(session)
         self.image_repo = ImageRepository(session)
+        self.query_service = TaskQueryService(session)
 
     def _validate_status_transition(
         self,
@@ -79,12 +87,14 @@ class TaskService:
         if target_status not in valid_targets:
             raise InvalidStatusTransitionError(current_status, target_status)
 
-    async def get_task_status(self, task_id: int) -> TaskStatusResponse:
+    async def get_task_status(self, task_id: str) -> TaskStatusResponse:
         """
         获取任务状态
+        
+        使用 TaskQueryService 在任意表中查找任务。
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
 
         Returns:
             TaskStatusResponse: 任务状态响应
@@ -92,16 +102,16 @@ class TaskService:
         Raises:
             TaskNotFoundError: 任务不存在
 
-        Requirements: 5.1, 5.2, 5.3
+        Requirements: 3.4
         """
-        task = await self.task_repo.get_by_id(task_id)
-        if task is None:
+        result = await self.query_service.find_by_task_id(task_id)
+        if result is None:
             raise TaskNotFoundError(task_id)
 
         # 构建图片信息（如果任务已完成）
         image_data = None
-        if task.status == TaskStatus.COMPLETED:
-            image = await self.image_repo.get_by_task_id(task_id)
+        if result.status == TaskStatus.COMPLETED:
+            image = await self.image_repo.get_by_task(result.task_type, result.id)
             if image:
                 image_data = ImageData(
                     image_base64=image.image_base64,
@@ -112,19 +122,19 @@ class TaskService:
             code=0,
             msg="success",
             data=TaskStatusData(
-                task_id=task.id,
-                status=task.status.value,
-                progress=task.progress,
-                type=task.type.value,
-                angle=task.angle,
+                task_id=result.task_id,
+                status=result.status.value,
+                progress=result.progress,
+                type=result.task_type.value,
+                angle=result.angle,
                 image=image_data,
-                error_message=task.error_message,
+                error_message=result.error_message,
             ),
         )
 
     async def update_task_status(
         self,
-        task_id: int,
+        task_id: str,
         status: TaskStatus,
         progress: int | None = None,
     ) -> None:
@@ -132,7 +142,7 @@ class TaskService:
         更新任务状态
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
             status: 新状态
             progress: 进度百分比
 
@@ -142,23 +152,24 @@ class TaskService:
 
         Requirements: 4.2
         """
-        task = await self.task_repo.get_by_id(task_id)
-        if task is None:
+        result = await self.query_service.find_by_task_id(task_id)
+        if result is None:
             raise TaskNotFoundError(task_id)
 
         # 验证状态转换
-        self._validate_status_transition(task.status, status)
+        self._validate_status_transition(result.status, status)
 
-        # 更新状态
-        await self.task_repo.update_status(
-            task_id=task_id,
-            status=status,
-            progress=progress,
-        )
+        # 根据任务类型选择正确的 repository 更新状态
+        if result.task_type == TaskType.MODEL:
+            await self.base_model_repo.update_status(task_id, status, progress)
+        elif result.task_type == TaskType.EDIT:
+            await self.edit_repo.update_status(task_id, status, progress)
+        else:
+            await self.outfit_repo.update_status(task_id, status, progress)
 
     async def complete_task(
         self,
-        task_id: int,
+        task_id: str,
         image_base64: str | None = None,
         image_url: str | None = None,
     ) -> None:
@@ -166,7 +177,7 @@ class TaskService:
         完成任务
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
             image_base64: 图片 Base64 数据
             image_url: 图片 OSS URL
 
@@ -176,38 +187,40 @@ class TaskService:
 
         Requirements: 4.3
         """
-        task = await self.task_repo.get_by_id(task_id)
-        if task is None:
+        result = await self.query_service.find_by_task_id(task_id)
+        if result is None:
             raise TaskNotFoundError(task_id)
 
         # 验证状态转换（只能从 PROCESSING 转换到 COMPLETED）
-        self._validate_status_transition(task.status, TaskStatus.COMPLETED)
+        self._validate_status_transition(result.status, TaskStatus.COMPLETED)
 
-        # 更新任务状态
-        await self.task_repo.update_status(
-            task_id=task_id,
-            status=TaskStatus.COMPLETED,
-            progress=100,
-        )
+        # 根据任务类型选择正确的 repository 更新状态
+        if result.task_type == TaskType.MODEL:
+            await self.base_model_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+        elif result.task_type == TaskType.EDIT:
+            await self.edit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+        else:
+            await self.outfit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
 
-        # 创建图片记录
+        # 创建图片记录（使用内部数据库 ID 和任务类型）
         await self.image_repo.create(
-            task_id=task_id,
-            angle=task.angle,
+            task_type=result.task_type,
+            task_id=result.id,
+            angle=result.angle,
             image_base64=image_base64,
             image_url=image_url,
         )
 
     async def fail_task(
         self,
-        task_id: int,
+        task_id: str,
         error_message: str,
     ) -> None:
         """
         标记任务失败
 
         Args:
-            task_id: 任务 ID
+            task_id: 任务 ID (格式: task_xxxxxxx)
             error_message: 错误信息
 
         Raises:
@@ -216,16 +229,17 @@ class TaskService:
 
         Requirements: 4.4
         """
-        task = await self.task_repo.get_by_id(task_id)
-        if task is None:
+        result = await self.query_service.find_by_task_id(task_id)
+        if result is None:
             raise TaskNotFoundError(task_id)
 
         # 验证状态转换（可以从 SUBMITTED 或 PROCESSING 转换到 FAILED）
-        self._validate_status_transition(task.status, TaskStatus.FAILED)
+        self._validate_status_transition(result.status, TaskStatus.FAILED)
 
-        # 更新任务状态
-        await self.task_repo.update_status(
-            task_id=task_id,
-            status=TaskStatus.FAILED,
-            error_message=error_message,
-        )
+        # 根据任务类型选择正确的 repository 更新状态
+        if result.task_type == TaskType.MODEL:
+            await self.base_model_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
+        elif result.task_type == TaskType.EDIT:
+            await self.edit_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
+        else:
+            await self.outfit_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
