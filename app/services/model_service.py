@@ -322,10 +322,7 @@ class ModelService:
         Returns:
             str: 穿搭 Prompt
         """
-        return build_outfit_prompt(
-            angle=request.angle.value,
-            outfit_description=request.outfit_description,
-        )
+        return build_outfit_prompt(angle=request.angle.value)
 
     async def create_outfit(self, request: OutfitModelRequest) -> TaskResponse:
         """

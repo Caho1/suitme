@@ -53,6 +53,27 @@ uv run uvicorn main:app --reload
 
 ---
 
+## 通用参数
+
+### 图片尺寸比例 (size)
+
+所有生成接口都支持 `size` 参数，用于指定生成图片的比例：
+
+| 值 | 描述 |
+|------|------|
+| `1:1` | 正方形 |
+| `2:3` | 竖版 |
+| `3:2` | 横版 |
+| `3:4` | 竖版 |
+| `4:3` | 横版 (默认) |
+| `4:5` | 竖版 |
+| `5:4` | 横版 |
+| `9:16` | 手机竖屏 |
+| `16:9` | 宽屏 |
+| `21:9` | 超宽屏 |
+
+---
+
 ## 1. 创建默认模特
 
 **POST** `/models/default`
@@ -73,7 +94,8 @@ uv run uvicorn main:app --reload
     "age": 25,
     "skin_tone": "fair",
     "body_shape": "slim"
-  }
+  },
+  "size": "4:3"
 }
 ```
 
@@ -85,6 +107,7 @@ uv run uvicorn main:app --reload
 | user_id | string | ✅ | 用户 ID |
 | user_image_base64 | string | ✅ | 用户正面照片，Data URI 格式 |
 | body_profile | object | ✅ | 用户身体参数 |
+| size | string | ❌ | 图片比例，默认 "4:3" |
 
 **body_profile 字段：**
 
@@ -104,7 +127,7 @@ uv run uvicorn main:app --reload
   "code": 0,
   "msg": "accepted",
   "data": {
-    "task_id": 1,
+    "task_id": "task_abc123def",
     "status": "submitted",
     "angle": null
   }
@@ -139,7 +162,8 @@ curl -X POST "http://localhost:8000/models/default" \
       "age": 25,
       "skin_tone": "fair",
       "body_shape": "slim"
-    }
+    },
+    "size": "4:3"
   }'
 ```
 
@@ -157,8 +181,9 @@ curl -X POST "http://localhost:8000/models/default" \
 {
   "request_id": "req-002",
   "user_id": "user-123",
-  "base_model_task_id": 1,
-  "edit_instructions": "将发型改为短发，肤色调亮一些"
+  "base_model_task_id": "task_abc123def",
+  "edit_instructions": "将发型改为短发，肤色调亮一些",
+  "size": "4:3"
 }
 ```
 
@@ -168,8 +193,9 @@ curl -X POST "http://localhost:8000/models/default" \
 |------|------|------|------|
 | request_id | string | ✅ | 请求唯一标识 |
 | user_id | string | ✅ | 用户 ID |
-| base_model_task_id | int | ✅ | 基础模特任务 ID (必须 > 0) |
+| base_model_task_id | string | ✅ | 基础模特任务 ID (格式: task_xxxxxxx) |
 | edit_instructions | string | ✅ | 编辑指令 |
+| size | string | ❌ | 图片比例，默认 "4:3" |
 
 ### 成功响应 (202 Accepted)
 
@@ -178,7 +204,7 @@ curl -X POST "http://localhost:8000/models/default" \
   "code": 0,
   "msg": "accepted",
   "data": {
-    "task_id": 2,
+    "task_id": "task_xyz789abc",
     "status": "submitted",
     "angle": null
   }
@@ -191,7 +217,7 @@ curl -X POST "http://localhost:8000/models/default" \
 ```json
 {
   "code": 1003,
-  "msg": "基础模特任务不存在: 999",
+  "msg": "基础模特任务不存在: task_invalid",
   "data": null
 }
 ```
@@ -205,8 +231,9 @@ curl -X POST "http://localhost:8000/models/edit" \
   -d '{
     "request_id": "req-002",
     "user_id": "user-123",
-    "base_model_task_id": 1,
-    "edit_instructions": "将发型改为短发"
+    "base_model_task_id": "task_abc123def",
+    "edit_instructions": "将发型改为短发",
+    "size": "4:3"
   }'
 ```
 
@@ -224,14 +251,15 @@ curl -X POST "http://localhost:8000/models/edit" \
 {
   "request_id": "req-003",
   "user_id": "user-123",
-  "base_model_task_id": 1,
+  "base_model_task_id": "task_abc123def",
   "angle": "front",
   "outfit_image_urls": [
     "https://example.com/top.jpg",
     "https://example.com/pants.jpg",
     "https://example.com/shoes.jpg"
   ],
-  "outfit_description": "白色T恤搭配牛仔裤和运动鞋"
+  "outfit_description": "白色T恤搭配牛仔裤和运动鞋",
+  "size": "4:3"
 }
 ```
 
@@ -241,10 +269,11 @@ curl -X POST "http://localhost:8000/models/edit" \
 |------|------|------|------|
 | request_id | string | ✅ | 请求唯一标识 |
 | user_id | string | ✅ | 用户 ID |
-| base_model_task_id | int | ✅ | 基础模特任务 ID |
+| base_model_task_id | string | ✅ | 基础模特任务 ID (格式: task_xxxxxxx) |
 | angle | string | ✅ | 视角: "front" / "side" / "back" |
 | outfit_image_urls | array | ✅ | 服装单品图片路径列表 (1-5 张，支持 URL 或本地路径) |
 | outfit_description | string | ❌ | 服装描述 |
+| size | string | ❌ | 图片比例，默认 "4:3" |
 
 ### 成功响应 (202 Accepted)
 
@@ -253,7 +282,7 @@ curl -X POST "http://localhost:8000/models/edit" \
   "code": 0,
   "msg": "accepted",
   "data": {
-    "task_id": 3,
+    "task_id": "task_outfit123",
     "status": "submitted",
     "angle": "front"
   }
@@ -289,6 +318,15 @@ curl -X POST "http://localhost:8000/models/edit" \
 }
 ```
 
+**404 Not Found** - 基础模特不存在
+```json
+{
+  "code": 1003,
+  "msg": "基础模特任务不存在: task_invalid",
+  "data": null
+}
+```
+
 ### cURL 示例
 
 ```bash
@@ -298,13 +336,14 @@ curl -X POST "http://localhost:8000/models/outfit" \
   -d '{
     "request_id": "req-003",
     "user_id": "user-123",
-    "base_model_task_id": 1,
+    "base_model_task_id": "task_abc123def",
     "angle": "front",
     "outfit_image_urls": [
       "https://example.com/top.jpg",
       "https://example.com/pants.jpg"
     ],
-    "outfit_description": "白色T恤搭配牛仔裤"
+    "outfit_description": "白色T恤搭配牛仔裤",
+    "size": "4:3"
   }'
 ```
 
@@ -320,7 +359,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
 
 | 参数 | 类型 | 描述 |
 |------|------|------|
-| task_id | int | 任务 ID |
+| task_id | string | 任务 ID (格式: task_xxxxxxx) |
 
 ### 成功响应 (200 OK)
 
@@ -330,7 +369,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
   "code": 0,
   "msg": "success",
   "data": {
-    "task_id": 1,
+    "task_id": "task_abc123def",
     "status": "processing",
     "progress": 50,
     "type": "default",
@@ -347,7 +386,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
   "code": 0,
   "msg": "success",
   "data": {
-    "task_id": 1,
+    "task_id": "task_abc123def",
     "status": "completed",
     "progress": 100,
     "type": "default",
@@ -367,7 +406,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
   "code": 0,
   "msg": "success",
   "data": {
-    "task_id": 1,
+    "task_id": "task_abc123def",
     "status": "failed",
     "progress": 0,
     "type": "default",
@@ -384,7 +423,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
 ```json
 {
   "code": 1003,
-  "msg": "任务不存在: 999",
+  "msg": "任务不存在: task_invalid",
   "data": null
 }
 ```
@@ -392,7 +431,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
 ### cURL 示例
 
 ```bash
-curl -X GET "http://localhost:8000/tasks/1" \
+curl -X GET "http://localhost:8000/tasks/task_abc123def" \
   -H "Authorization: Bearer your-secret-token-here"
 ```
 
@@ -406,6 +445,16 @@ curl -X GET "http://localhost:8000/tasks/1" \
 | processing | 任务处理中 |
 | completed | 任务完成，可获取图片 |
 | failed | 任务失败，查看 error_message |
+
+---
+
+## 任务类型说明
+
+| 类型 | 描述 |
+|------|------|
+| default | 默认模特生成 |
+| edit | 模特编辑 |
+| outfit | 穿搭生成 |
 
 ---
 
@@ -449,13 +498,14 @@ curl -X POST "http://localhost:8000/models/default" \
       "weight_kg": 55,
       "age": 25,
       "skin_tone": "fair"
-    }
+    },
+    "size": "4:3"
   }'
 ```
 
-2. **查询任务状态** (假设返回 task_id=1)
+2. **查询任务状态** (假设返回 task_id="task_abc123")
 ```bash
-curl -X GET "http://localhost:8000/tasks/1" \
+curl -X GET "http://localhost:8000/tasks/task_abc123" \
   -H "Authorization: Bearer your-secret-token-here"
 ```
 
@@ -467,8 +517,9 @@ curl -X POST "http://localhost:8000/models/edit" \
   -d '{
     "request_id": "test-002",
     "user_id": "user-001",
-    "base_model_task_id": 1,
-    "edit_instructions": "改为短发"
+    "base_model_task_id": "task_abc123",
+    "edit_instructions": "改为短发",
+    "size": "4:3"
   }'
 ```
 
@@ -480,11 +531,12 @@ curl -X POST "http://localhost:8000/models/outfit" \
   -d '{
     "request_id": "test-003",
     "user_id": "user-001",
-    "base_model_task_id": 1,
+    "base_model_task_id": "task_abc123",
     "angle": "front",
     "outfit_image_urls": [
       "https://example.com/top.jpg",
       "https://example.com/pants.jpg"
-    ]
+    ],
+    "size": "4:3"
   }'
 ```
