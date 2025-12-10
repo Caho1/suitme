@@ -7,6 +7,7 @@ Suitme 数字模特图像生成服务启动脚本
 import uvicorn
 
 from app.config import get_settings
+from app.main import app  # noqa: F401
 
 
 def main() -> None:
@@ -18,7 +19,7 @@ def main() -> None:
     settings = get_settings()
     
     uvicorn.run(
-        "app.main:app",
+        "main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,  # 开发环境启用热重载

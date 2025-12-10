@@ -4,6 +4,8 @@
 使用 hypothesis 进行属性测试，验证 API 路由的正确性。
 """
 
+import os
+import uuid
 import pytest
 from hypothesis import given, strategies as st, settings, HealthCheck
 from unittest.mock import AsyncMock, patch
@@ -20,10 +22,14 @@ _db_initialized = False
 
 
 async def ensure_db_initialized():
-    """确保数据库已初始化"""
+    """确保数据库已初始化（使用 .env 中配置的数据库）"""
     global _db_initialized
     if not _db_initialized:
-        init_db("sqlite+aiosqlite:///:memory:", echo=False)
+        database_url = os.getenv(
+            "DATABASE_URL",
+            "mysql+aiomysql://root:123456@localhost:3306/suitme"
+        )
+        init_db(database_url, echo=False)
         await create_all_tables()
         _db_initialized = True
 
@@ -471,3 +477,414 @@ async def test_nonexistent_task_query_returns_404(
         data = response.json()
         assert "detail" in data
         assert data["detail"]["code"] == 1003
+
+
+# ============== Property 5: API 响应格式不变 ==============
+# **Feature: code-refactoring, Property 5: API response format unchanged**
+# **Validates: Requirements 3.4, 5.3**
+
+
+@pytest.mark.asyncio
+@settings(max_examples=10, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+    body_profile=body_profile_strategy,
+)
+async def test_api_response_format_default_model(
+    request_id: str,
+    user_id: str,
+    body_profile: dict,
+):
+    """
+    **Feature: code-refactoring, Property 5: API response format unchanged**
+    
+    *For any* valid API request to /models/default, the response structure 
+    (field names, types, nesting) SHALL be identical before and after refactoring.
+    
+    Expected response format:
+    {
+        "code": 0,
+        "msg": "accepted",
+        "data": {
+            "task_id": <string>,
+            "status": "submitted",
+            "angle": null
+        }
+    }
+    
+    **Validates: Requirements 3.4, 5.3**
+    """
+    await ensure_db_initialized()
+    
+    app = create_test_app()
+    
+    # Generate unique IDs to avoid database conflicts
+    unique_id = str(uuid.uuid4())[:8]
+    unique_request_id = f"{request_id}-{unique_id}"
+    
+    with patch("app.services.model_service.ApimartClient") as MockClient, \
+         patch("app.services.model_service.TaskPoller") as MockPoller:
+        mock_instance = AsyncMock()
+        mock_instance.submit_generation.return_value = f"task-format-{unique_id}"
+        MockClient.return_value = mock_instance
+        
+        # Mock TaskPoller to avoid background polling
+        mock_poller = AsyncMock()
+        MockPoller.return_value = mock_poller
+        
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/models/default",
+                json={
+                    "request_id": unique_request_id,
+                    "user_id": user_id,
+                    "user_image_base64": VALID_DATA_URI,
+                    "body_profile": body_profile,
+                },
+            )
+            
+            # Verify HTTP status code
+            assert response.status_code == 202, f"Expected 202, got {response.status_code}: {response.text}"
+            
+            data = response.json()
+            
+            # Verify exact response structure (backward compatibility)
+            assert isinstance(data, dict)
+            assert set(data.keys()) == {"code", "msg", "data"}
+            
+            # Verify field types
+            assert isinstance(data["code"], int)
+            assert data["code"] == 0
+            assert isinstance(data["msg"], str)
+            assert data["msg"] == "accepted"
+            
+            # Verify nested data structure
+            assert isinstance(data["data"], dict)
+            assert "task_id" in data["data"]
+            assert "status" in data["data"]
+            assert isinstance(data["data"]["task_id"], str)
+            assert data["data"]["status"] == "submitted"
+
+
+@pytest.mark.asyncio
+@settings(max_examples=10, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+)
+async def test_api_response_format_task_query(
+    request_id: str,
+    user_id: str,
+):
+    """
+    **Feature: code-refactoring, Property 5: API response format unchanged**
+    
+    *For any* valid API request to /tasks/{task_id}, the response structure 
+    SHALL be identical before and after refactoring.
+    
+    Expected response format:
+    {
+        "code": 0,
+        "msg": "success",
+        "data": {
+            "task_id": <string>,
+            "status": <string>,
+            "progress": <int>,
+            "type": <string>,
+            "angle": <string|null>,
+            "image": <object|null>,
+            "error_message": <string|null>
+        }
+    }
+    
+    **Validates: Requirements 3.4, 5.3**
+    """
+    await ensure_db_initialized()
+    
+    app = create_test_app()
+    
+    # Generate unique IDs to avoid database conflicts
+    unique_id = str(uuid.uuid4())[:8]
+    task_id = None
+    
+    # Create a task first
+    async with await get_test_session() as session:
+        from app.repositories import BaseModelTaskRepository
+        task_repo = BaseModelTaskRepository(session)
+        task = await task_repo.create(
+            task_id=f"format-test-{unique_id}",
+            request_id=f"{request_id}-{unique_id}",
+            user_id=user_id,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
+        )
+        await session.commit()
+        task_id = task.task_id
+    
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test"
+    ) as client:
+        response = await client.get(f"/tasks/{task_id}")
+        
+        # Verify HTTP status code
+        assert response.status_code == 200
+        
+        data = response.json()
+        
+        # Verify exact response structure (backward compatibility)
+        assert isinstance(data, dict)
+        assert set(data.keys()) == {"code", "msg", "data"}
+        
+        # Verify field types
+        assert isinstance(data["code"], int)
+        assert data["code"] == 0
+        assert isinstance(data["msg"], str)
+        assert data["msg"] == "success"
+        
+        # Verify nested data structure
+        assert isinstance(data["data"], dict)
+        
+        # Required fields in data
+        required_fields = {"task_id", "status", "progress", "type"}
+        assert required_fields.issubset(set(data["data"].keys()))
+        
+        # Verify field types
+        assert isinstance(data["data"]["task_id"], str)
+        assert isinstance(data["data"]["status"], str)
+        assert isinstance(data["data"]["progress"], int)
+        assert isinstance(data["data"]["type"], str)
+        
+        # Optional fields can be null
+        if "angle" in data["data"]:
+            assert data["data"]["angle"] is None or isinstance(data["data"]["angle"], str)
+        if "image" in data["data"]:
+            assert data["data"]["image"] is None or isinstance(data["data"]["image"], dict)
+        if "error_message" in data["data"]:
+            assert data["data"]["error_message"] is None or isinstance(data["data"]["error_message"], str)
+
+
+@pytest.mark.asyncio
+@settings(max_examples=10, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+    edit_instructions=st.text(min_size=1, max_size=100),
+)
+async def test_api_response_format_edit_model(
+    request_id: str,
+    user_id: str,
+    edit_instructions: str,
+):
+    """
+    **Feature: code-refactoring, Property 5: API response format unchanged**
+    
+    *For any* valid API request to /models/edit, the response structure 
+    (field names, types, nesting) SHALL be identical before and after refactoring.
+    
+    Expected response format:
+    {
+        "code": 0,
+        "msg": "accepted",
+        "data": {
+            "task_id": <string>,
+            "status": "submitted",
+            "angle": null
+        }
+    }
+    
+    **Validates: Requirements 3.4, 5.3**
+    """
+    await ensure_db_initialized()
+    
+    app = create_test_app()
+    
+    # Generate unique IDs to avoid database conflicts
+    unique_id = str(uuid.uuid4())[:8]
+    base_task_id = None
+    
+    # Create a base model task first with completed status and image
+    async with await get_test_session() as session:
+        from app.repositories import BaseModelTaskRepository, ImageRepository
+        task_repo = BaseModelTaskRepository(session)
+        image_repo = ImageRepository(session)
+        
+        base_task = await task_repo.create(
+            task_id=f"base-edit-format-{unique_id}",
+            request_id=f"base-edit-format-{unique_id}",
+            user_id=user_id,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
+        )
+        # Update to completed status
+        await task_repo.update_status(base_task.task_id, TaskStatus.PROCESSING)
+        await task_repo.update_status(base_task.task_id, TaskStatus.COMPLETED, progress=100)
+        
+        # Create image for base model
+        await image_repo.create(
+            task_type=TaskType.MODEL,
+            task_id=base_task.id,
+            image_base64=VALID_DATA_URI,
+        )
+        await session.commit()
+        base_task_id = base_task.task_id
+    
+    with patch("app.services.model_service.ApimartClient") as MockClient, \
+         patch("app.services.model_service.TaskPoller") as MockPoller:
+        mock_instance = AsyncMock()
+        mock_instance.submit_generation.return_value = f"task-edit-format-{unique_id}"
+        MockClient.return_value = mock_instance
+        
+        # Mock TaskPoller to avoid background polling
+        mock_poller = AsyncMock()
+        MockPoller.return_value = mock_poller
+        
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/models/edit",
+                json={
+                    "request_id": f"{request_id}-{unique_id}",
+                    "user_id": user_id,
+                    "base_model_task_id": base_task_id,
+                    "edit_instructions": edit_instructions,
+                },
+            )
+            
+            # Verify HTTP status code
+            assert response.status_code == 202, f"Expected 202, got {response.status_code}: {response.text}"
+            
+            data = response.json()
+            
+            # Verify exact response structure (backward compatibility)
+            assert isinstance(data, dict)
+            assert set(data.keys()) == {"code", "msg", "data"}
+            
+            # Verify field types
+            assert isinstance(data["code"], int)
+            assert data["code"] == 0
+            assert isinstance(data["msg"], str)
+            assert data["msg"] == "accepted"
+            
+            # Verify nested data structure
+            assert isinstance(data["data"], dict)
+            assert "task_id" in data["data"]
+            assert "status" in data["data"]
+            assert isinstance(data["data"]["task_id"], str)
+            assert data["data"]["status"] == "submitted"
+
+
+@pytest.mark.asyncio
+@settings(max_examples=10, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+    angle=angle_strategy,
+)
+async def test_api_response_format_outfit(
+    request_id: str,
+    user_id: str,
+    angle: str,
+):
+    """
+    **Feature: code-refactoring, Property 5: API response format unchanged**
+    
+    *For any* valid API request to /models/outfit, the response structure 
+    SHALL include angle field and be identical before and after refactoring.
+    
+    **Validates: Requirements 3.4, 5.3**
+    """
+    await ensure_db_initialized()
+    
+    app = create_test_app()
+    
+    # Generate unique IDs to avoid database conflicts
+    unique_id = str(uuid.uuid4())[:8]
+    base_task_id = None
+    
+    # Create a base model task first with completed status and image
+    async with await get_test_session() as session:
+        from app.repositories import BaseModelTaskRepository, ImageRepository
+        task_repo = BaseModelTaskRepository(session)
+        image_repo = ImageRepository(session)
+        
+        base_task = await task_repo.create(
+            task_id=f"base-outfit-format-{unique_id}",
+            request_id=f"base-outfit-format-{unique_id}",
+            user_id=user_id,
+            gender="male",
+            height_cm=175.0,
+            weight_kg=70.0,
+            age=25,
+            skin_tone="light",
+        )
+        # Update to completed status
+        await task_repo.update_status(base_task.task_id, TaskStatus.PROCESSING)
+        await task_repo.update_status(base_task.task_id, TaskStatus.COMPLETED, progress=100)
+        
+        # Create image for base model
+        await image_repo.create(
+            task_type=TaskType.MODEL,
+            task_id=base_task.id,
+            image_base64=VALID_DATA_URI,
+        )
+        await session.commit()
+        base_task_id = base_task.task_id
+    
+    with patch("app.services.model_service.ApimartClient") as MockClient, \
+         patch("app.services.model_service.TaskPoller") as MockPoller:
+        mock_instance = AsyncMock()
+        mock_instance.submit_generation.return_value = f"task-outfit-format-{unique_id}"
+        MockClient.return_value = mock_instance
+        
+        # Mock TaskPoller to avoid background polling
+        mock_poller = AsyncMock()
+        MockPoller.return_value = mock_poller
+        
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/models/outfit",
+                json={
+                    "request_id": f"{request_id}-{unique_id}",
+                    "user_id": user_id,
+                    "base_model_task_id": base_task_id,
+                    "angle": angle,
+                    "outfit_image_urls": ["https://example.com/outfit1.jpg"],
+                },
+            )
+            
+            # Verify HTTP status code
+            assert response.status_code == 202
+            
+            data = response.json()
+            
+            # Verify exact response structure (backward compatibility)
+            assert isinstance(data, dict)
+            assert set(data.keys()) == {"code", "msg", "data"}
+            
+            # Verify field types
+            assert data["code"] == 0
+            assert data["msg"] == "accepted"
+            
+            # Verify nested data structure includes angle
+            assert isinstance(data["data"], dict)
+            assert "task_id" in data["data"]
+            assert "status" in data["data"]
+            assert "angle" in data["data"]
+            assert data["data"]["angle"] == angle
+            assert data["data"]["status"] == "submitted"

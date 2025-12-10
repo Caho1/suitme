@@ -30,6 +30,7 @@ from app.schemas import (
     TaskData,
     TaskResponse,
 )
+from app.services.task_query_service import TaskQueryService
 
 
 class BaseModelNotFoundError(Exception):
@@ -60,6 +61,7 @@ class ModelService:
         self.edit_repo = EditTaskRepository(session)
         self.outfit_repo = OutfitTaskRepository(session)
         self.image_repo = ImageRepository(session)
+        self.query_service = TaskQueryService(session)
         self.apimart_client = apimart_client or ApimartClient()
         self._poller = TaskPoller(
             apimart_client=self.apimart_client,
@@ -71,80 +73,30 @@ class ModelService:
     async def _handle_task_progress(
         self, task_id: str, status: TaskStatus, progress: int
     ) -> None:
-        """处理任务进度更新"""
-        # 尝试在三个表中查找并更新任务
-        task = await self.base_model_repo.get_by_task_id(task_id)
-        if task:
-            await self.base_model_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
-        else:
-            task = await self.edit_repo.get_by_task_id(task_id)
-            if task:
-                await self.edit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
-            else:
-                task = await self.outfit_repo.get_by_task_id(task_id)
-                if task:
-                    await self.outfit_repo.update_status(task_id, TaskStatus.PROCESSING, progress)
+        """处理任务进度更新 - 使用 TaskQueryService 统一更新"""
+        await self.query_service.update_status(task_id, TaskStatus.PROCESSING, progress)
         await self.session.commit()
 
     async def _handle_task_completed(
         self, task_id: str, image_base64: str | None, image_url: str | None
     ) -> None:
-        """处理任务完成"""
-        # 尝试在三个表中查找任务并确定类型
-        task = await self.base_model_repo.get_by_task_id(task_id)
-        if task:
-            await self.base_model_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+        """处理任务完成 - 使用 TaskQueryService 统一更新"""
+        result = await self.query_service.update_status(task_id, TaskStatus.COMPLETED, 100)
+        if result:
             await self.image_repo.create(
-                task_type=TaskType.MODEL,
-                task_id=task.id,
-                angle=None,
+                task_type=result.task_type,
+                task_id=result.id,
+                angle=result.angle,
                 image_base64=image_base64,
                 image_url=image_url,
             )
-        else:
-            task = await self.edit_repo.get_by_task_id(task_id)
-            if task:
-                await self.edit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
-                await self.image_repo.create(
-                    task_type=TaskType.EDIT,
-                    task_id=task.id,
-                    angle=None,
-                    image_base64=image_base64,
-                    image_url=image_url,
-                )
-            else:
-                task = await self.outfit_repo.get_by_task_id(task_id)
-                if task:
-                    await self.outfit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
-                    await self.image_repo.create(
-                        task_type=TaskType.OUTFIT,
-                        task_id=task.id,
-                        angle=task.angle,
-                        image_base64=image_base64,
-                        image_url=image_url,
-                    )
         await self.session.commit()
 
     async def _handle_task_failed(self, task_id: str, error_message: str) -> None:
-        """处理任务失败"""
-        # 尝试在三个表中查找并更新任务
-        task = await self.base_model_repo.get_by_task_id(task_id)
-        if task:
-            await self.base_model_repo.update_status(
-                task_id, TaskStatus.FAILED, error_message=error_message
-            )
-        else:
-            task = await self.edit_repo.get_by_task_id(task_id)
-            if task:
-                await self.edit_repo.update_status(
-                    task_id, TaskStatus.FAILED, error_message=error_message
-                )
-            else:
-                task = await self.outfit_repo.get_by_task_id(task_id)
-                if task:
-                    await self.outfit_repo.update_status(
-                        task_id, TaskStatus.FAILED, error_message=error_message
-                    )
+        """处理任务失败 - 使用 TaskQueryService 统一更新"""
+        await self.query_service.update_status(
+            task_id, TaskStatus.FAILED, error_message=error_message
+        )
         await self.session.commit()
 
     def _build_default_model_prompt(self, request: DefaultModelRequest) -> str:

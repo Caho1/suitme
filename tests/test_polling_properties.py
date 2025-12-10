@@ -5,6 +5,7 @@
 更新为使用新的分离任务表结构。
 """
 
+import os
 import pytest
 from hypothesis import given, strategies as st, settings, HealthCheck
 
@@ -25,10 +26,15 @@ _db_initialized = False
 
 
 async def ensure_db_initialized():
-    """确保数据库已初始化"""
+    """确保数据库已初始化（使用 MySQL）"""
     global _db_initialized
     if not _db_initialized:
-        init_db("sqlite+aiosqlite:///:memory:", echo=False)
+        # 使用环境变量中的 MySQL 连接，或默认测试数据库
+        database_url = os.getenv(
+            "DATABASE_URL",
+            "mysql+aiomysql://root:123456@localhost:3306/suitme_test"
+        )
+        init_db(database_url, echo=False)
         await create_all_tables()
         _db_initialized = True
 

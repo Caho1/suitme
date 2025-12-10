@@ -39,6 +39,31 @@ class TaskPoller:
     并在任务结束时触发回调。
     """
 
+    @staticmethod
+    def _extract_error_message(error: str | dict | None) -> str:
+        """
+        从 Apimart 错误响应中提取错误消息
+        
+        处理以下情况：
+        - string: 直接返回
+        - dict with "message" key: 返回 message 值
+        - dict without "message" key: 返回 dict 的字符串表示
+        - None: 返回默认错误消息
+        
+        Args:
+            error: 错误值，可能是字符串、字典或 None
+            
+        Returns:
+            str: 非空的错误消息字符串
+            
+        Requirements: 4.1
+        """
+        if isinstance(error, dict):
+            return error.get("message", str(error))
+        if error:
+            return str(error)
+        return "Unknown error from Apimart"
+
     def __init__(
         self,
         apimart_client: ApimartClient | None = None,
@@ -155,14 +180,8 @@ class TaskPoller:
                         return
                     
                     elif status.is_failed:
-                        # 任务失败 - 确保 error_msg 是字符串
-                        error = status.error
-                        if isinstance(error, dict):
-                            error_msg = error.get("message", str(error))
-                        elif error:
-                            error_msg = str(error)
-                        else:
-                            error_msg = "Unknown error from Apimart"
+                        # 任务失败 - 提取错误消息
+                        error_msg = self._extract_error_message(status.error)
                         logger.error(f"Task {task_id} failed: {error_msg}")
                         await self._handle_failed(task_id, error_msg)
                         return

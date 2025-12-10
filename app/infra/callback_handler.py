@@ -40,21 +40,18 @@ class CallbackPayload:
     error_message: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典，排除 None 值"""
-        result: dict[str, Any] = {
-            "task_id": self.task_id,
-            "status": self.status,
-            "type": self.type,
+        """转换为字典，排除 None 值（Requirements: 4.2）"""
+        return {
+            k: v for k, v in {
+                "task_id": self.task_id,
+                "status": self.status,
+                "type": self.type,
+                "angle": self.angle,
+                "image_base64": self.image_base64,
+                "image_url": self.image_url,
+                "error_message": self.error_message,
+            }.items() if v is not None
         }
-        if self.angle is not None:
-            result["angle"] = self.angle
-        if self.image_base64 is not None:
-            result["image_base64"] = self.image_base64
-        if self.image_url is not None:
-            result["image_url"] = self.image_url
-        if self.error_message is not None:
-            result["error_message"] = self.error_message
-        return result
 
 
 class CallbackHandler:

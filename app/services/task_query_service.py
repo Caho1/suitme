@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.repositories import (
     BaseModelTaskRepository,
+    BaseTaskRepository,
     EditTaskRepository,
     OutfitTaskRepository,
 )
@@ -131,3 +132,65 @@ class TaskQueryService:
         """
         result = await self.find_by_task_id(task_id)
         return result is not None
+
+    def _get_repo_by_type(self, task_type: TaskType) -> BaseTaskRepository:
+        """
+        根据任务类型返回对应的 repository
+        
+        Args:
+            task_type: 任务类型 (MODEL, EDIT, OUTFIT)
+            
+        Returns:
+            对应的 repository 实例
+            
+        Requirements: 1.2
+        """
+        repo_map = {
+            TaskType.MODEL: self.base_model_repo,
+            TaskType.EDIT: self.edit_repo,
+            TaskType.OUTFIT: self.outfit_repo,
+        }
+        return repo_map[task_type]
+
+    async def update_status(
+        self,
+        task_id: str,
+        status: TaskStatus,
+        progress: int | None = None,
+        error_message: str | None = None,
+    ) -> TaskQueryResult | None:
+        """
+        统一的任务状态更新方法
+        
+        查找任务、确定类型、调用对应 repository 的 update_status。
+        任务不存在时返回 None。
+        
+        Args:
+            task_id: Apimart 任务 ID
+            status: 新状态
+            progress: 进度百分比
+            error_message: 错误信息 (失败时)
+            
+        Returns:
+            TaskQueryResult 包含更新后的任务对象和类型，未找到返回 None
+            
+        Requirements: 1.1, 1.3, 1.4
+        """
+        # 先查找任务以确定类型
+        query_result = await self.find_by_task_id(task_id)
+        if query_result is None:
+            return None
+        
+        # 根据类型获取对应的 repository 并更新
+        repo = self._get_repo_by_type(query_result.task_type)
+        updated_task = await repo.update_status(
+            task_id=task_id,
+            status=status,
+            progress=progress,
+            error_message=error_message,
+        )
+        
+        if updated_task is None:
+            return None
+        
+        return TaskQueryResult(task=updated_task, task_type=query_result.task_type)

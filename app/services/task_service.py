@@ -8,12 +8,7 @@ Task Service
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import TaskStatus, TaskType
-from app.repositories import (
-    BaseModelTaskRepository,
-    EditTaskRepository,
-    OutfitTaskRepository,
-    ImageRepository,
-)
+from app.repositories import ImageRepository
 from app.schemas import (
     ImageData,
     TaskStatusData,
@@ -62,9 +57,6 @@ class TaskService:
             session: 数据库会话
         """
         self.session = session
-        self.base_model_repo = BaseModelTaskRepository(session)
-        self.edit_repo = EditTaskRepository(session)
-        self.outfit_repo = OutfitTaskRepository(session)
         self.image_repo = ImageRepository(session)
         self.query_service = TaskQueryService(session)
 
@@ -139,7 +131,7 @@ class TaskService:
         progress: int | None = None,
     ) -> None:
         """
-        更新任务状态
+        更新任务状态 - 使用 TaskQueryService 统一更新
 
         Args:
             task_id: 任务 ID (格式: task_xxxxxxx)
@@ -159,13 +151,8 @@ class TaskService:
         # 验证状态转换
         self._validate_status_transition(result.status, status)
 
-        # 根据任务类型选择正确的 repository 更新状态
-        if result.task_type == TaskType.MODEL:
-            await self.base_model_repo.update_status(task_id, status, progress)
-        elif result.task_type == TaskType.EDIT:
-            await self.edit_repo.update_status(task_id, status, progress)
-        else:
-            await self.outfit_repo.update_status(task_id, status, progress)
+        # 使用 TaskQueryService 统一更新
+        await self.query_service.update_status(task_id, status, progress)
 
     async def complete_task(
         self,
@@ -174,7 +161,7 @@ class TaskService:
         image_url: str | None = None,
     ) -> None:
         """
-        完成任务
+        完成任务 - 使用 TaskQueryService 统一更新
 
         Args:
             task_id: 任务 ID (格式: task_xxxxxxx)
@@ -194,13 +181,8 @@ class TaskService:
         # 验证状态转换（只能从 PROCESSING 转换到 COMPLETED）
         self._validate_status_transition(result.status, TaskStatus.COMPLETED)
 
-        # 根据任务类型选择正确的 repository 更新状态
-        if result.task_type == TaskType.MODEL:
-            await self.base_model_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
-        elif result.task_type == TaskType.EDIT:
-            await self.edit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
-        else:
-            await self.outfit_repo.update_status(task_id, TaskStatus.COMPLETED, 100)
+        # 使用 TaskQueryService 统一更新
+        updated_result = await self.query_service.update_status(task_id, TaskStatus.COMPLETED, 100)
 
         # 创建图片记录（使用内部数据库 ID 和任务类型）
         await self.image_repo.create(
@@ -217,7 +199,7 @@ class TaskService:
         error_message: str,
     ) -> None:
         """
-        标记任务失败
+        标记任务失败 - 使用 TaskQueryService 统一更新
 
         Args:
             task_id: 任务 ID (格式: task_xxxxxxx)
@@ -236,10 +218,5 @@ class TaskService:
         # 验证状态转换（可以从 SUBMITTED 或 PROCESSING 转换到 FAILED）
         self._validate_status_transition(result.status, TaskStatus.FAILED)
 
-        # 根据任务类型选择正确的 repository 更新状态
-        if result.task_type == TaskType.MODEL:
-            await self.base_model_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
-        elif result.task_type == TaskType.EDIT:
-            await self.edit_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
-        else:
-            await self.outfit_repo.update_status(task_id, TaskStatus.FAILED, error_message=error_message)
+        # 使用 TaskQueryService 统一更新
+        await self.query_service.update_status(task_id, TaskStatus.FAILED, error_message=error_message)

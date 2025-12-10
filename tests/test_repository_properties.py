@@ -5,6 +5,7 @@
 更新为使用新的分离任务表结构。
 """
 
+import os
 import pytest
 from hypothesis import given, strategies as st, settings, HealthCheck
 from datetime import datetime
@@ -25,10 +26,14 @@ _db_initialized = False
 
 
 async def ensure_db_initialized():
-    """确保数据库已初始化"""
+    """确保数据库已初始化（使用 .env 中配置的数据库）"""
     global _db_initialized
     if not _db_initialized:
-        init_db("sqlite+aiosqlite:///:memory:", echo=False)
+        database_url = os.getenv(
+            "DATABASE_URL",
+            "mysql+aiomysql://root:123456@localhost:3306/suitme"
+        )
+        init_db(database_url, echo=False)
         await create_all_tables()
         _db_initialized = True
 
@@ -495,4 +500,259 @@ async def test_completed_at_set_on_failure(
         assert failed_task.error_message == error_message
         
         # 回滚以便下次测试
+        await session.rollback()
+
+
+# ============== Property 6: 数据库操作保持数据完整性 ==============
+# **Feature: code-refactoring, Property 6: Database operations maintain data integrity**
+# **Validates: Requirements 5.4**
+
+
+@pytest.mark.asyncio
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    task_id=task_id_strategy,
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
+    status_sequence=st.lists(
+        st.sampled_from([TaskStatus.PROCESSING, TaskStatus.COMPLETED]),
+        min_size=1,
+        max_size=2,
+    ),
+)
+async def test_database_integrity_after_status_updates(
+    task_id: str,
+    request_id: str,
+    user_id: str,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
+    status_sequence: list[TaskStatus],
+):
+    """
+    **Feature: code-refactoring, Property 6: Database operations maintain data integrity**
+    
+    *For any* sequence of task creation and status update operations, 
+    the final database state SHALL be consistent (valid status values, 
+    correct field values preserved).
+    
+    **Validates: Requirements 5.4**
+    """
+    async with await get_test_session() as session:
+        repo = BaseModelTaskRepository(session)
+        
+        # Create task
+        task = await repo.create(
+            task_id=task_id,
+            request_id=request_id,
+            user_id=user_id,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
+        )
+        
+        original_id = task.id
+        
+        # Apply status updates
+        current_status = TaskStatus.SUBMITTED
+        for new_status in status_sequence:
+            # Only apply valid transitions
+            if new_status == TaskStatus.PROCESSING and current_status == TaskStatus.SUBMITTED:
+                await repo.update_status(task_id, new_status, progress=50)
+                current_status = new_status
+            elif new_status == TaskStatus.COMPLETED and current_status == TaskStatus.PROCESSING:
+                await repo.update_status(task_id, new_status, progress=100)
+                current_status = new_status
+        
+        # Verify data integrity
+        final_task = await repo.get_by_task_id(task_id)
+        
+        assert final_task is not None
+        # ID should not change
+        assert final_task.id == original_id
+        # Original fields should be preserved
+        assert final_task.task_id == task_id
+        assert final_task.request_id == request_id
+        assert final_task.user_id == user_id
+        assert final_task.gender == gender
+        assert final_task.height_cm == height_cm
+        assert final_task.weight_kg == weight_kg
+        assert final_task.age == age
+        assert final_task.skin_tone == skin_tone
+        # Status should be valid
+        assert final_task.status in [TaskStatus.SUBMITTED, TaskStatus.PROCESSING, TaskStatus.COMPLETED, TaskStatus.FAILED]
+        # Progress should be valid
+        assert 0 <= final_task.progress <= 100
+        
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    base_task_id=task_id_strategy,
+    edit_task_id=task_id_strategy,
+    outfit_task_id=task_id_strategy,
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
+    angle=angle_strategy,
+)
+async def test_database_integrity_foreign_key_relationships(
+    base_task_id: str,
+    edit_task_id: str,
+    outfit_task_id: str,
+    request_id: str,
+    user_id: str,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
+    angle: str,
+):
+    """
+    **Feature: code-refactoring, Property 6: Database operations maintain data integrity**
+    
+    *For any* sequence of task creation operations, foreign key relationships 
+    SHALL be correctly maintained (EditTask and OutfitTask reference valid BaseModelTask).
+    
+    **Validates: Requirements 5.4**
+    """
+    async with await get_test_session() as session:
+        base_repo = BaseModelTaskRepository(session)
+        edit_repo = EditTaskRepository(session)
+        outfit_repo = OutfitTaskRepository(session)
+        
+        # Create base model task
+        base_task = await base_repo.create(
+            task_id=base_task_id,
+            request_id=f"base-{request_id}",
+            user_id=user_id,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
+        )
+        
+        # Create edit task referencing base model
+        edit_task = await edit_repo.create(
+            task_id=edit_task_id,
+            request_id=f"edit-{request_id}",
+            user_id=user_id,
+            base_model_id=base_task.id,
+            edit_instructions="Test edit instructions",
+        )
+        
+        # Create outfit task referencing base model
+        outfit_task = await outfit_repo.create(
+            task_id=outfit_task_id,
+            request_id=f"outfit-{request_id}",
+            user_id=user_id,
+            base_model_id=base_task.id,
+            angle=angle,
+        )
+        
+        # Verify foreign key relationships
+        retrieved_edit = await edit_repo.get_by_id(edit_task.id)
+        retrieved_outfit = await outfit_repo.get_by_id(outfit_task.id)
+        
+        assert retrieved_edit is not None
+        assert retrieved_edit.base_model_id == base_task.id
+        
+        assert retrieved_outfit is not None
+        assert retrieved_outfit.base_model_id == base_task.id
+        
+        # Verify base model can be retrieved
+        retrieved_base = await base_repo.get_by_id(base_task.id)
+        assert retrieved_base is not None
+        assert retrieved_base.id == base_task.id
+        
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    task_id=task_id_strategy,
+    request_id=request_id_strategy,
+    user_id=user_id_strategy,
+    gender=gender_strategy,
+    height_cm=height_strategy,
+    weight_kg=weight_strategy,
+    age=age_strategy,
+    skin_tone=skin_tone_strategy,
+)
+async def test_database_integrity_image_association(
+    task_id: str,
+    request_id: str,
+    user_id: str,
+    gender: str,
+    height_cm: float,
+    weight_kg: float,
+    age: int,
+    skin_tone: str,
+):
+    """
+    **Feature: code-refactoring, Property 6: Database operations maintain data integrity**
+    
+    *For any* completed task with image, the image record SHALL correctly 
+    reference the task (no orphaned records).
+    
+    **Validates: Requirements 5.4**
+    """
+    async with await get_test_session() as session:
+        task_repo = BaseModelTaskRepository(session)
+        image_repo = ImageRepository(session)
+        
+        # Create task
+        task = await task_repo.create(
+            task_id=task_id,
+            request_id=request_id,
+            user_id=user_id,
+            gender=gender,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age=age,
+            skin_tone=skin_tone,
+        )
+        
+        # Update to completed
+        await task_repo.update_status(task_id, TaskStatus.PROCESSING)
+        await task_repo.update_status(task_id, TaskStatus.COMPLETED, progress=100)
+        
+        # Create image record
+        image = await image_repo.create(
+            task_type=TaskType.MODEL,
+            task_id=task.id,
+            image_base64="test_base64_data",
+        )
+        
+        # Verify image association
+        retrieved_image = await image_repo.get_by_task(TaskType.MODEL, task.id)
+        
+        assert retrieved_image is not None
+        assert retrieved_image.task_id == task.id
+        assert retrieved_image.task_type == TaskType.MODEL
+        assert retrieved_image.image_base64 == "test_base64_data"
+        
+        # Verify task still exists and is complete
+        retrieved_task = await task_repo.get_by_task_id(task_id)
+        assert retrieved_task is not None
+        assert retrieved_task.status == TaskStatus.COMPLETED
+        
         await session.rollback()

@@ -4,6 +4,7 @@
 使用 hypothesis 进行属性测试，验证 Service 层的业务逻辑正确性。
 """
 
+import os
 import pytest
 from hypothesis import given, strategies as st, settings, HealthCheck
 from unittest.mock import AsyncMock, MagicMock
@@ -21,11 +22,14 @@ _db_initialized = False
 
 
 async def ensure_db_initialized():
-    """确保数据库已初始化"""
+    """确保数据库已初始化（使用 .env 中配置的数据库）"""
     global _db_initialized
     if not _db_initialized:
-        # 使用内存数据库进行测试
-        init_db("sqlite+aiosqlite:///:memory:", echo=False)
+        database_url = os.getenv(
+            "DATABASE_URL",
+            "mysql+aiomysql://root:123456@localhost:3306/suitme"
+        )
+        init_db(database_url, echo=False)
         await create_all_tables()
         _db_initialized = True
 
