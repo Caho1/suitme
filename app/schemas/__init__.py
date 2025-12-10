@@ -48,52 +48,61 @@ class BodyProfile(BaseModel):
     body_shape: str | None = Field(default=None, description="身材类型")
 
 
-# ============== Data URI 验证 ==============
+# ============== 图片验证 ==============
 
 # Data URI 格式: data:[<mediatype>][;base64],<data>
 DATA_URI_PATTERN = re.compile(
     r"^data:image/(jpeg|jpg|png|gif|webp|bmp);base64,[A-Za-z0-9+/]+=*$"
 )
 
+# URL 格式: http:// 或 https:// 开头
+URL_PATTERN = re.compile(r"^https?://")
 
-def validate_data_uri(value: str) -> str:
+
+def is_valid_url(value: str) -> bool:
+    """检查字符串是否为有效的 URL"""
+    return bool(URL_PATTERN.match(value))
+
+
+def is_valid_data_uri(value: str) -> bool:
+    """检查字符串是否为有效的 Data URI 格式"""
+    if not DATA_URI_PATTERN.match(value):
+        return False
+    try:
+        base64_part = value.split(",", 1)[1]
+        base64.b64decode(base64_part, validate=True)
+        return True
+    except Exception:
+        return False
+
+
+def validate_image_input(value: str) -> str:
     """
-    验证 Data URI 格式的 Base64 图片字符串
+    验证图片输入，支持 Data URI 或 URL
     
     Args:
-        value: 待验证的字符串
+        value: 待验证的字符串 (Data URI 或 URL)
         
     Returns:
         验证通过的原始字符串
         
     Raises:
-        ValueError: 格式不符合 Data URI 规范
+        ValueError: 格式不符合要求
     """
     if not value:
         raise ValueError("图片数据不能为空")
     
-    if not DATA_URI_PATTERN.match(value):
-        raise ValueError(
-            "图片必须是有效的 Data URI 格式: data:image/<type>;base64,<data>"
-        )
+    # 支持 URL 格式
+    if is_valid_url(value):
+        return value
     
-    # 提取 base64 部分并验证
-    try:
-        base64_part = value.split(",", 1)[1]
-        base64.b64decode(base64_part, validate=True)
-    except Exception:
-        raise ValueError("Base64 数据无效")
+    # 支持 Data URI 格式
+    if is_valid_data_uri(value):
+        return value
     
-    return value
-
-
-def is_valid_data_uri(value: str) -> bool:
-    """检查字符串是否为有效的 Data URI 格式"""
-    try:
-        validate_data_uri(value)
-        return True
-    except (ValueError, Exception):
-        return False
+    raise ValueError(
+        "图片必须是有效的 URL (http/https) 或 Data URI 格式 (data:image/<type>;base64,<data>)"
+    )
 
 
 # ============== 请求模型 ==============
@@ -102,14 +111,14 @@ class DefaultModelRequest(BaseModel):
     """默认模特生成请求"""
     request_id: str = Field(..., min_length=1, description="请求唯一标识")
     user_id: str = Field(..., min_length=1, description="用户 ID")
-    user_image_base64: str = Field(..., description="用户正面照片 (Data URI 格式)")
+    user_image: str = Field(..., description="用户正面照片 (支持 Data URI 或 URL)")
     body_profile: BodyProfile = Field(..., description="用户身体参数")
     size: ImageSize = Field(default=ImageSize.RATIO_4_3, description="生成图片比例")
 
-    @field_validator("user_image_base64")
+    @field_validator("user_image")
     @classmethod
     def validate_user_image(cls, v: str) -> str:
-        return validate_data_uri(v)
+        return validate_image_input(v)
 
 
 class EditModelRequest(BaseModel):
@@ -127,22 +136,20 @@ class OutfitModelRequest(BaseModel):
     user_id: str = Field(..., min_length=1, description="用户 ID")
     base_model_task_id: str = Field(..., min_length=1, description="基础模特任务 ID (格式: task_xxxxxxx)")
     angle: AngleType = Field(..., description="视角: front/side/back")
-    outfit_image_urls: list[str] = Field(
+    outfit_images: list[str] = Field(
         ...,
         min_length=1,
         max_length=5,
-        description="服装单品图片路径列表 (1-5 张，支持 URL 或本地路径)",
+        description="服装单品图片列表 (1-5 张，支持 Data URI 或 URL)",
     )
-    outfit_description: str | None = Field(default=None, description="服装描述")
     size: ImageSize = Field(default=ImageSize.RATIO_4_3, description="生成图片比例")
 
-    @field_validator("outfit_image_urls")
+    @field_validator("outfit_images")
     @classmethod
-    def validate_outfit_urls(cls, v: list[str]) -> list[str]:
-        """验证图片路径列表非空"""
-        for url in v:
-            if not url or not url.strip():
-                raise ValueError("图片路径不能为空")
+    def validate_outfit_images(cls, v: list[str]) -> list[str]:
+        """验证图片列表，每个元素必须是有效的 URL 或 Data URI"""
+        for img in v:
+            validate_image_input(img)
         return v
 
 

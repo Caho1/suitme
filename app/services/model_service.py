@@ -140,7 +140,7 @@ class ModelService:
         # 2. 提交到 Apimart，获取 task_id
         task_id = await self.apimart_client.submit_generation(
             prompt=prompt,
-            image_urls=[request.user_image_base64],
+            image_urls=[request.user_image],
             size=request.size.value,
         )
 
@@ -300,7 +300,7 @@ class ModelService:
         # 3. 提交到 Apimart，获取 task_id（基础模特图片 + 服装图片）
         task_id = await self.apimart_client.submit_generation(
             prompt=prompt,
-            image_urls=[base_image] + request.outfit_image_urls,
+            image_urls=[base_image] + request.outfit_images,
             size=request.size.value,
         )
 
@@ -311,7 +311,6 @@ class ModelService:
             user_id=request.user_id,
             base_model_id=base_internal_id,
             angle=request.angle.value,
-            outfit_description=request.outfit_description,
         )
         await self.session.commit()
 

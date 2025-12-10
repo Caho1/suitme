@@ -13,7 +13,7 @@ Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
 import asyncio
 import base64
 import logging
-from datetime import datetime, timezone
+
 from typing import Callable, Awaitable
 
 import httpx
@@ -93,11 +93,6 @@ class TaskPoller:
         """轮询间隔（秒）"""
         return self._settings.task_poll_interval
 
-    @property
-    def task_timeout(self) -> float:
-        """任务超时时间（秒）"""
-        return self._settings.task_timeout
-
     async def _get_http_client(self) -> httpx.AsyncClient:
         """获取 HTTP 客户端用于下载图片"""
         if self._http_client is None:
@@ -153,22 +148,15 @@ class TaskPoller:
         """
         轮询循环
 
+        持续轮询直到 Apimart 返回完成或失败状态，不设置超时。
+
         Args:
             task_id: Apimart 任务 ID
 
-        Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
+        Requirements: 4.1, 4.2, 4.3, 4.4
         """
-        start_time = datetime.now(timezone.utc)
-        
         try:
             while True:
-                # 检查超时
-                elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
-                if elapsed > self.task_timeout:
-                    logger.error(f"Task {task_id} timed out after {elapsed:.1f}s")
-                    await self._handle_timeout(task_id)
-                    return
-
                 try:
                     # 查询 Apimart 任务状态
                     status = await self._apimart_client.get_task_status(task_id)
@@ -279,20 +267,6 @@ class TaskPoller:
         """
         if self._on_task_failed:
             await self._on_task_failed(task_id, error_message)
-
-    async def _handle_timeout(
-        self,
-        task_id: str,
-    ) -> None:
-        """
-        处理任务超时
-
-        Args:
-            task_id: 任务 ID (格式: task_xxxxxxx)
-
-        Requirements: 4.5
-        """
-        await self._handle_failed(task_id, "timeout")
 
     async def _download_image_as_base64(self, image_url: str) -> str:
         """

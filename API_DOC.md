@@ -86,7 +86,7 @@ uv run uvicorn main:app --reload
 {
   "request_id": "req-001",           // 请求唯一标识
   "user_id": "user-123",             // 用户 ID
-  "user_image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",  // 用户正面照片，Data URI 格式
+  "user_image": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",  // 用户正面照片 (支持 Data URI 或 URL)
   "body_profile": {
     "gender": "female",              // 性别: "male" 或 "female"
     "height_cm": 165.0,              // 身高 (cm)，范围: 0-300
@@ -105,7 +105,7 @@ uv run uvicorn main:app --reload
 |------|------|------|------|
 | request_id | string | ✅ | 请求唯一标识 |
 | user_id | string | ✅ | 用户 ID |
-| user_image_base64 | string | ✅ | 用户正面照片，Data URI 格式 |
+| user_image | string | ✅ | 用户正面照片，支持 Data URI 或 URL |
 | body_profile | object | ✅ | 用户身体参数 |
 | size | string | ❌ | 图片比例，默认 "4:3" |
 
@@ -154,7 +154,7 @@ curl -X POST "http://localhost:8000/models/default" \
   -d '{
     "request_id": "req-001",
     "user_id": "user-123",
-    "user_image_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "user_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "body_profile": {
       "gender": "female",
       "height_cm": 165.0,
@@ -243,7 +243,7 @@ curl -X POST "http://localhost:8000/models/edit" \
 
 **POST** `/models/outfit`
 
-将服装单品"穿"到数字模特上，生成穿搭效果图。支持传入 1-5 张服装单品图片 URL。
+将服装单品"穿"到数字模特上，生成穿搭效果图。支持传入 1-5 张服装单品图片。
 
 ### 请求体
 
@@ -253,12 +253,11 @@ curl -X POST "http://localhost:8000/models/edit" \
   "user_id": "user-123",                      // 用户 ID
   "base_model_task_id": "task_abc123def",     // 基础模特任务 ID (创建默认模特返回的 task_id)
   "angle": "front",                           // 视角: "front" / "side" / "back"
-  "outfit_image_urls": [                      // 服装单品图片路径列表 (1-5 张)
+  "outfit_images": [                          // 服装单品图片列表 (1-5 张，支持 Data URI 或 URL)
     "https://example.com/top.jpg",            // 上衣图片 URL
     "https://example.com/pants.jpg",          // 裤子图片 URL
-    "https://example.com/shoes.jpg"           // 鞋子图片 URL
+    "data:image/jpeg;base64,/9j/4AAQ..."      // 或 Base64 Data URI
   ],
-  "outfit_description": "白色T恤搭配牛仔裤和运动鞋",  // 服装描述 (可选)
   "size": "4:3"                               // 图片比例 (可选，默认 "4:3")
 }
 ```
@@ -271,8 +270,7 @@ curl -X POST "http://localhost:8000/models/edit" \
 | user_id | string | ✅ | 用户 ID |
 | base_model_task_id | string | ✅ | 基础模特任务 ID (格式: task_xxxxxxx) |
 | angle | string | ✅ | 视角: "front" / "side" / "back" |
-| outfit_image_urls | array | ✅ | 服装单品图片路径列表 (1-5 张，支持 URL 或本地路径) |
-| outfit_description | string | ❌ | 服装描述 |
+| outfit_images | array | ✅ | 服装单品图片列表 (1-5 张，支持 Data URI 或 URL) |
 | size | string | ❌ | 图片比例，默认 "4:3" |
 
 ### 成功响应 (202 Accepted)
@@ -311,7 +309,7 @@ curl -X POST "http://localhost:8000/models/edit" \
   "detail": [
     {
       "type": "too_long",
-      "loc": ["body", "outfit_image_urls"],
+      "loc": ["body", "outfit_images"],
       "msg": "List should have at most 5 items after validation, not 6"
     }
   ]
@@ -338,11 +336,10 @@ curl -X POST "http://localhost:8000/models/outfit" \
     "user_id": "user-123",
     "base_model_task_id": "task_abc123def",
     "angle": "front",
-    "outfit_image_urls": [
+    "outfit_images": [
       "https://example.com/top.jpg",
       "https://example.com/pants.jpg"
     ],
-    "outfit_description": "白色T恤搭配牛仔裤",
     "size": "4:3"
   }'
 ```
@@ -491,7 +488,7 @@ curl -X POST "http://localhost:8000/models/default" \
   -d '{
     "request_id": "test-001",
     "user_id": "user-001",
-    "user_image_base64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "user_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "body_profile": {
       "gender": "female",
       "height_cm": 165,
@@ -533,7 +530,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
     "user_id": "user-001",
     "base_model_task_id": "task_abc123",
     "angle": "front",
-    "outfit_image_urls": [
+    "outfit_images": [
       "https://example.com/top.jpg",
       "https://example.com/pants.jpg"
     ],
