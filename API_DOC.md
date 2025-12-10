@@ -82,20 +82,20 @@ uv run uvicorn main:app --reload
 
 ### 请求体
 
-```json
+```jsonc
 {
-  "request_id": "req-001",
-  "user_id": "user-123",
-  "user_image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+  "request_id": "req-001",           // 请求唯一标识
+  "user_id": "user-123",             // 用户 ID
+  "user_image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",  // 用户正面照片，Data URI 格式
   "body_profile": {
-    "gender": "female",
-    "height_cm": 165.0,
-    "weight_kg": 55.0,
-    "age": 25,
-    "skin_tone": "fair",
-    "body_shape": "slim"
+    "gender": "female",              // 性别: "male" 或 "female"
+    "height_cm": 165.0,              // 身高 (cm)，范围: 0-300
+    "weight_kg": 55.0,               // 体重 (kg)，范围: 0-500
+    "age": 25,                       // 年龄，范围: 0-150
+    "skin_tone": "fair",             // 肤色
+    "body_shape": "slim"             // 身材类型 (可选)
   },
-  "size": "4:3"
+  "size": "4:3"                      // 图片比例 (可选，默认 "4:3")
 }
 ```
 
@@ -177,13 +177,13 @@ curl -X POST "http://localhost:8000/models/default" \
 
 ### 请求体
 
-```json
+```jsonc
 {
-  "request_id": "req-002",
-  "user_id": "user-123",
-  "base_model_task_id": "task_abc123def",
-  "edit_instructions": "将发型改为短发，肤色调亮一些",
-  "size": "4:3"
+  "request_id": "req-002",                    // 请求唯一标识
+  "user_id": "user-123",                      // 用户 ID
+  "base_model_task_id": "task_abc123def",     // 基础模特任务 ID (创建默认模特返回的 task_id)
+  "edit_instructions": "将发型改为短发，肤色调亮一些",  // 编辑指令
+  "size": "4:3"                               // 图片比例 (可选，默认 "4:3")
 }
 ```
 
@@ -247,19 +247,19 @@ curl -X POST "http://localhost:8000/models/edit" \
 
 ### 请求体
 
-```json
+```jsonc
 {
-  "request_id": "req-003",
-  "user_id": "user-123",
-  "base_model_task_id": "task_abc123def",
-  "angle": "front",
-  "outfit_image_urls": [
-    "https://example.com/top.jpg",
-    "https://example.com/pants.jpg",
-    "https://example.com/shoes.jpg"
+  "request_id": "req-003",                    // 请求唯一标识
+  "user_id": "user-123",                      // 用户 ID
+  "base_model_task_id": "task_abc123def",     // 基础模特任务 ID (创建默认模特返回的 task_id)
+  "angle": "front",                           // 视角: "front" / "side" / "back"
+  "outfit_image_urls": [                      // 服装单品图片路径列表 (1-5 张)
+    "https://example.com/top.jpg",            // 上衣图片 URL
+    "https://example.com/pants.jpg",          // 裤子图片 URL
+    "https://example.com/shoes.jpg"           // 鞋子图片 URL
   ],
-  "outfit_description": "白色T恤搭配牛仔裤和运动鞋",
-  "size": "4:3"
+  "outfit_description": "白色T恤搭配牛仔裤和运动鞋",  // 服装描述 (可选)
+  "size": "4:3"                               // 图片比例 (可选，默认 "4:3")
 }
 ```
 
