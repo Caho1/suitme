@@ -85,14 +85,14 @@ uv run uvicorn main:app --reload
 ```jsonc
 {
   "user_id": "user-123",             // 用户 ID
-  "user_image": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",  // 用户正面照片 (支持 Data URI 或 URL)
+  "picture_url": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",  // 用户正面照片 (支持 Data URI 或 URL)
   "body_profile": {
-    "gender": "female",              // 性别: "male" 或 "female"
-    "height_cm": 165.0,              // 身高 (cm)，范围: 0-300
-    "weight_kg": 55.0,               // 体重 (kg)，范围: 0-500
+    "gender": "女",                  // 性别: "男" 或 "女"
+    "height": 165.0,                 // 身高 (cm)，范围: 0-300
+    "weight": 55.0,                  // 体重 (kg)，范围: 0-500
     "age": 25,                       // 年龄，范围: 0-150
-    "skin_tone": "fair",             // 肤色
-    "body_shape": "slim"             // 身材类型 (可选)
+    "skin_color": "浅小麦",          // 肤色
+    "body_type": "标准"              // 身材类型 (可选)
   },
   "size": "4:3"                      // 图片比例 (可选，默认 "4:3")
 }
@@ -103,7 +103,7 @@ uv run uvicorn main:app --reload
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
 | user_id | string | ✅ | 用户 ID |
-| user_image | string | ✅ | 用户正面照片，支持 Data URI 或 URL |
+| picture_url | string | ✅ | 用户正面照片，支持 Data URI 或 URL |
 | body_profile | object | ✅ | 用户身体参数 |
 | size | string | ❌ | 图片比例，默认 "4:3" |
 
@@ -111,12 +111,12 @@ uv run uvicorn main:app --reload
 
 | 字段 | 类型 | 必填 | 约束 | 描述 |
 |------|------|------|------|------|
-| gender | string | ❌ | "male" 或 "female" | 性别 |
-| height_cm | float | ❌ | 0 < x ≤ 300 | 身高 (cm) |
-| weight_kg | float | ❌ | 0 < x ≤ 500 | 体重 (kg) |
+| gender | string | ❌ | "男" 或 "女" | 性别 |
+| height | float | ❌ | 0 < x ≤ 300 | 身高 (cm) |
+| weight | float | ❌ | 0 < x ≤ 500 | 体重 (kg) |
 | age | int | ❌ | 0 < x ≤ 150 | 年龄 |
-| skin_tone | string | ❌ | 非空 | 肤色 |
-| body_shape | string | ❌ | - | 身材类型 |
+| skin_color | string | ❌ | - | 肤色 |
+| body_type | string | ❌ | - | 身材类型 |
 
 ### 成功响应 (202 Accepted)
 
@@ -151,14 +151,14 @@ curl -X POST "http://localhost:8000/models/default" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
     "user_id": "user-123",
-    "user_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "picture_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "body_profile": {
-      "gender": "female",
-      "height_cm": 165.0,
-      "weight_kg": 55.0,
+      "gender": "女",
+      "height": 165.0,
+      "weight": 55.0,
       "age": 25,
-      "skin_tone": "fair",
-      "body_shape": "slim"
+      "skin_color": "浅小麦",
+      "body_type": "标准"
     },
     "size": "4:3"
   }'
@@ -478,13 +478,13 @@ curl -X POST "http://localhost:8000/models/default" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
     "user_id": "user-001",
-    "user_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "picture_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "body_profile": {
-      "gender": "female",
-      "height_cm": 165,
-      "weight_kg": 55,
+      "gender": "女",
+      "height": 165,
+      "weight": 55,
       "age": 25,
-      "skin_tone": "fair"
+      "skin_color": "浅小麦"
     },
     "size": "4:3"
   }'

@@ -66,36 +66,36 @@ ANGLE_TEXT_MAP = {
 
 def build_default_model_prompt(
     gender: str,
-    height_cm: float,
-    weight_kg: float,
+    height: float,
+    weight: float,
     age: int,
-    skin_tone: str,
-    body_shape: str | None = None,
+    skin_color: str,
+    body_type: str | None = None,
 ) -> str:
     """
     构建默认模特生成的 Prompt
     
     Args:
-        gender: 性别 (male/female)
-        height_cm: 身高 (cm)
-        weight_kg: 体重 (kg)
+        gender: 性别 (男/女)
+        height: 身高 (cm)
+        weight: 体重 (kg)
         age: 年龄
-        skin_tone: 肤色
-        body_shape: 身材类型（可选）
+        skin_color: 肤色
+        body_type: 身材类型（可选）
     
     Returns:
         str: 格式化后的 Prompt
     """
-    gender_text = "男性" if gender == "male" else "女性"
-    body_shape_text = f"，身材类型：{body_shape}" if body_shape else ""
+    gender_text = "男性" if gender == "男" else "女性"
+    body_type_text = f"，身材类型：{body_type}" if body_type else ""
     
     return DEFAULT_MODEL_PROMPT.format(
         gender=gender_text,
-        height_cm=height_cm,
-        weight_kg=weight_kg,
+        height_cm=height,
+        weight_kg=weight,
         age=age,
-        skin_tone=skin_tone,
-        body_shape_text=body_shape_text,
+        skin_tone=skin_color,
+        body_shape_text=body_type_text,
     )
 
 

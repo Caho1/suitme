@@ -113,11 +113,11 @@ class ModelService:
         profile = request.body_profile
         return build_default_model_prompt(
             gender=profile.gender,
-            height_cm=profile.height_cm,
-            weight_kg=profile.weight_kg,
+            height=profile.height,
+            weight=profile.weight,
             age=profile.age,
-            skin_tone=profile.skin_tone,
-            body_shape=profile.body_shape,
+            skin_color=profile.skin_color,
+            body_type=profile.body_type,
         )
 
     async def create_default_model(
@@ -141,7 +141,7 @@ class ModelService:
         # 2. 提交到 Apimart，获取 task_id
         task_id = await self.apimart_client.submit_generation(
             prompt=prompt,
-            image_urls=[request.user_image],
+            image_urls=[request.picture_url],
             size=request.size.value,
         )
 
@@ -153,11 +153,11 @@ class ModelService:
             request_id=request_id,
             user_id=request.user_id,
             gender=profile.gender,
-            height_cm=profile.height_cm,
-            weight_kg=profile.weight_kg,
+            height=profile.height,
+            weight=profile.weight,
             age=profile.age,
-            skin_tone=profile.skin_tone,
-            body_shape=profile.body_shape,
+            skin_color=profile.skin_color,
+            body_type=profile.body_type,
         )
         await self.session.commit()
 

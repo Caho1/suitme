@@ -40,12 +40,12 @@ class ImageSize(str, Enum):
 
 class BodyProfile(BaseModel):
     """用户身体参数 (所有字段可选)"""
-    gender: Literal["male", "female"] | None = Field(default=None, description="性别")
-    height_cm: float | None = Field(default=None, gt=0, le=300, description="身高 (cm)")
-    weight_kg: float | None = Field(default=None, gt=0, le=500, description="体重 (kg)")
+    gender: str | None = Field(default=None, description="性别 (男/女)")
+    height: float | None = Field(default=None, gt=0, le=300, description="身高 (cm)")
+    weight: float | None = Field(default=None, gt=0, le=500, description="体重 (kg)")
     age: int | None = Field(default=None, gt=0, le=150, description="年龄")
-    skin_tone: str | None = Field(default=None, min_length=1, description="肤色")
-    body_shape: str | None = Field(default=None, description="身材类型")
+    skin_color: str | None = Field(default=None, description="肤色")
+    body_type: str | None = Field(default=None, description="身材类型")
 
 
 # ============== 图片验证 ==============
@@ -110,13 +110,13 @@ def validate_image_input(value: str) -> str:
 class DefaultModelRequest(BaseModel):
     """默认模特生成请求"""
     user_id: str = Field(..., min_length=1, description="用户 ID")
-    user_image: str = Field(..., description="用户正面照片 (支持 Data URI 或 URL)")
+    picture_url: str = Field(..., description="用户正面照片 (支持 Data URI 或 URL)")
     body_profile: BodyProfile = Field(..., description="用户身体参数")
     size: ImageSize = Field(default=ImageSize.RATIO_4_3, description="生成图片比例")
 
-    @field_validator("user_image")
+    @field_validator("picture_url")
     @classmethod
-    def validate_user_image(cls, v: str) -> str:
+    def validate_picture_url(cls, v: str) -> str:
         return validate_image_input(v)
 
 
