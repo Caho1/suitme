@@ -39,12 +39,12 @@ class ImageSize(str, Enum):
 # ============== 通用模型 ==============
 
 class BodyProfile(BaseModel):
-    """用户身体参数"""
-    gender: Literal["male", "female"] = Field(..., description="性别")
-    height_cm: float = Field(..., gt=0, le=300, description="身高 (cm)")
-    weight_kg: float = Field(..., gt=0, le=500, description="体重 (kg)")
-    age: int = Field(..., gt=0, le=150, description="年龄")
-    skin_tone: str = Field(..., min_length=1, description="肤色")
+    """用户身体参数 (所有字段可选)"""
+    gender: Literal["male", "female"] | None = Field(default=None, description="性别")
+    height_cm: float | None = Field(default=None, gt=0, le=300, description="身高 (cm)")
+    weight_kg: float | None = Field(default=None, gt=0, le=500, description="体重 (kg)")
+    age: int | None = Field(default=None, gt=0, le=150, description="年龄")
+    skin_tone: str | None = Field(default=None, min_length=1, description="肤色")
     body_shape: str | None = Field(default=None, description="身材类型")
 
 
@@ -109,7 +109,6 @@ def validate_image_input(value: str) -> str:
 
 class DefaultModelRequest(BaseModel):
     """默认模特生成请求"""
-    request_id: str = Field(..., min_length=1, description="请求唯一标识")
     user_id: str = Field(..., min_length=1, description="用户 ID")
     user_image: str = Field(..., description="用户正面照片 (支持 Data URI 或 URL)")
     body_profile: BodyProfile = Field(..., description="用户身体参数")
@@ -123,7 +122,6 @@ class DefaultModelRequest(BaseModel):
 
 class EditModelRequest(BaseModel):
     """模特编辑请求"""
-    request_id: str = Field(..., min_length=1, description="请求唯一标识")
     user_id: str = Field(..., min_length=1, description="用户 ID")
     base_model_task_id: str = Field(..., min_length=1, description="基础模特任务 ID (格式: task_xxxxxxx)")
     edit_instructions: str = Field(..., min_length=1, description="编辑指令")
@@ -132,7 +130,6 @@ class EditModelRequest(BaseModel):
 
 class OutfitModelRequest(BaseModel):
     """穿搭生成请求"""
-    request_id: str = Field(..., min_length=1, description="请求唯一标识")
     user_id: str = Field(..., min_length=1, description="用户 ID")
     base_model_task_id: str = Field(..., min_length=1, description="基础模特任务 ID (格式: task_xxxxxxx)")
     angle: AngleType = Field(..., description="视角: front/side/back")

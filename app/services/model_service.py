@@ -6,6 +6,7 @@ Model Service
 """
 
 import asyncio
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,9 +147,10 @@ class ModelService:
 
         # 3. 创建任务记录（使用 Apimart 返回的 task_id，存储 body_profile 字段）
         profile = request.body_profile
+        request_id = str(uuid.uuid4())
         task = await self.base_model_repo.create(
             task_id=task_id,
-            request_id=request.request_id,
+            request_id=request_id,
             user_id=request.user_id,
             gender=profile.gender,
             height_cm=profile.height_cm,
@@ -242,9 +244,10 @@ class ModelService:
         )
 
         # 4. 创建任务记录（使用 EditTaskRepository）
+        request_id = str(uuid.uuid4())
         task = await self.edit_repo.create(
             task_id=task_id,
-            request_id=request.request_id,
+            request_id=request_id,
             user_id=request.user_id,
             base_model_id=base_internal_id,
             edit_instructions=request.edit_instructions,
@@ -305,9 +308,10 @@ class ModelService:
         )
 
         # 4. 创建任务记录（使用 OutfitTaskRepository）
+        request_id = str(uuid.uuid4())
         task = await self.outfit_repo.create(
             task_id=task_id,
-            request_id=request.request_id,
+            request_id=request_id,
             user_id=request.user_id,
             base_model_id=base_internal_id,
             angle=request.angle.value,

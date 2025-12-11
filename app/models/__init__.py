@@ -66,12 +66,12 @@ class BaseModelTask(Base):
     request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     
-    # Body profile fields
-    gender: Mapped[str] = mapped_column(String(20), nullable=False)
-    height_cm: Mapped[float] = mapped_column(Float, nullable=False)
-    weight_kg: Mapped[float] = mapped_column(Float, nullable=False)
-    age: Mapped[int] = mapped_column(Integer, nullable=False)
-    skin_tone: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Body profile fields (all optional)
+    gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    skin_tone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     body_shape: Mapped[str | None] = mapped_column(String(50), nullable=True)
     
     # Status fields

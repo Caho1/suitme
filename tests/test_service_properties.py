@@ -79,13 +79,11 @@ VALID_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf
 @pytest.mark.asyncio
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
-    request_id=request_id_strategy,
     user_id=user_id_strategy,
     nonexistent_task_id=nonexistent_task_id_strategy,
     edit_instructions=edit_instructions_strategy,
 )
 async def test_edit_model_rejects_nonexistent_base_model_task_id(
-    request_id: str,
     user_id: str,
     nonexistent_task_id: int,
     edit_instructions: str,
@@ -105,7 +103,6 @@ async def test_edit_model_rejects_nonexistent_base_model_task_id(
         # 构建请求（使用字符串 task_id）
         nonexistent_task_id_str = f"task_{nonexistent_task_id}"
         request = EditModelRequest(
-            request_id=request_id,
             user_id=user_id,
             base_model_task_id=nonexistent_task_id_str,
             edit_instructions=edit_instructions,
@@ -127,13 +124,11 @@ async def test_edit_model_rejects_nonexistent_base_model_task_id(
 @pytest.mark.asyncio
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
-    request_id=request_id_strategy,
     user_id=user_id_strategy,
     nonexistent_task_id=nonexistent_task_id_strategy,
     angle=angle_strategy,
 )
 async def test_outfit_rejects_nonexistent_base_model_task_id(
-    request_id: str,
     user_id: str,
     nonexistent_task_id: int,
     angle: AngleType,
@@ -153,11 +148,10 @@ async def test_outfit_rejects_nonexistent_base_model_task_id(
         # 构建请求（使用字符串 task_id）
         nonexistent_task_id_str = f"task_{nonexistent_task_id}"
         request = OutfitModelRequest(
-            request_id=request_id,
             user_id=user_id,
             base_model_task_id=nonexistent_task_id_str,
             angle=angle,
-            outfit_image_urls=["https://example.com/outfit.jpg"],
+            outfit_images=["https://example.com/outfit.jpg"],
         )
         
         # 验证抛出 BaseModelNotFoundError

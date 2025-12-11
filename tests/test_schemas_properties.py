@@ -73,9 +73,8 @@ def test_invalid_base64_rejected_default_model(invalid_base64: str):
     
     with pytest.raises(ValidationError) as exc_info:
         DefaultModelRequest(
-            request_id="test-request-001",
             user_id="user-001",
-            user_image_base64=invalid_base64,
+            user_image=invalid_base64,
             body_profile={
                 "gender": "male",
                 "height_cm": 175.0,
@@ -85,10 +84,10 @@ def test_invalid_base64_rejected_default_model(invalid_base64: str):
             }
         )
     
-    # 验证错误与 user_image_base64 字段相关
+    # 验证错误与 user_image 字段相关
     errors = exc_info.value.errors()
-    field_errors = [e for e in errors if "user_image_base64" in str(e.get("loc", []))]
-    assert len(field_errors) > 0, f"Expected error on user_image_base64, got: {errors}"
+    field_errors = [e for e in errors if "user_image" in str(e.get("loc", []))]
+    assert len(field_errors) > 0, f"Expected error on user_image, got: {errors}"
 
 
 @given(empty_url=st.sampled_from(["", "   ", "\t", "\n"]))
@@ -101,16 +100,15 @@ def test_empty_outfit_url_rejected(empty_url: str):
     """
     with pytest.raises(ValidationError) as exc_info:
         OutfitModelRequest(
-            request_id="test-request-001",
             user_id="user-001",
-            base_model_task_id=1,
+            base_model_task_id="task_123",
             angle="front",
-            outfit_image_urls=[empty_url],
+            outfit_images=[empty_url],
         )
     
     errors = exc_info.value.errors()
-    field_errors = [e for e in errors if "outfit_image_urls" in str(e.get("loc", []))]
-    assert len(field_errors) > 0, f"Expected error on outfit_image_urls, got: {errors}"
+    field_errors = [e for e in errors if "outfit_images" in str(e.get("loc", []))]
+    assert len(field_errors) > 0, f"Expected error on outfit_images, got: {errors}"
 
 
 
@@ -204,9 +202,8 @@ def test_invalid_body_profile_rejected_in_request(invalid_profile: dict):
     
     with pytest.raises(ValidationError) as exc_info:
         DefaultModelRequest(
-            request_id="test-request-001",
             user_id="user-001",
-            user_image_base64=valid_image,
+            user_image=valid_image,
             body_profile=invalid_profile,
         )
     
@@ -247,11 +244,10 @@ def test_invalid_angle_rejected(invalid_angle: str):
     
     with pytest.raises(ValidationError) as exc_info:
         OutfitModelRequest(
-            request_id="test-request-001",
             user_id="user-001",
-            base_model_task_id=1,
+            base_model_task_id="task_123",
             angle=invalid_angle,
-            outfit_image_urls=valid_urls,
+            outfit_images=valid_urls,
         )
     
     # 验证错误与 angle 字段相关

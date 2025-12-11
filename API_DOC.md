@@ -84,7 +84,6 @@ uv run uvicorn main:app --reload
 
 ```jsonc
 {
-  "request_id": "req-001",           // 请求唯一标识
   "user_id": "user-123",             // 用户 ID
   "user_image": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",  // 用户正面照片 (支持 Data URI 或 URL)
   "body_profile": {
@@ -103,21 +102,20 @@ uv run uvicorn main:app --reload
 
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| request_id | string | ✅ | 请求唯一标识 |
 | user_id | string | ✅ | 用户 ID |
 | user_image | string | ✅ | 用户正面照片，支持 Data URI 或 URL |
 | body_profile | object | ✅ | 用户身体参数 |
 | size | string | ❌ | 图片比例，默认 "4:3" |
 
-**body_profile 字段：**
+**body_profile 字段 (所有字段可选)：**
 
 | 字段 | 类型 | 必填 | 约束 | 描述 |
 |------|------|------|------|------|
-| gender | string | ✅ | "male" 或 "female" | 性别 |
-| height_cm | float | ✅ | 0 < x ≤ 300 | 身高 (cm) |
-| weight_kg | float | ✅ | 0 < x ≤ 500 | 体重 (kg) |
-| age | int | ✅ | 0 < x ≤ 150 | 年龄 |
-| skin_tone | string | ✅ | 非空 | 肤色 |
+| gender | string | ❌ | "male" 或 "female" | 性别 |
+| height_cm | float | ❌ | 0 < x ≤ 300 | 身高 (cm) |
+| weight_kg | float | ❌ | 0 < x ≤ 500 | 体重 (kg) |
+| age | int | ❌ | 0 < x ≤ 150 | 年龄 |
+| skin_tone | string | ❌ | 非空 | 肤色 |
 | body_shape | string | ❌ | - | 身材类型 |
 
 ### 成功响应 (202 Accepted)
@@ -152,7 +150,6 @@ curl -X POST "http://localhost:8000/models/default" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
-    "request_id": "req-001",
     "user_id": "user-123",
     "user_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "body_profile": {
@@ -179,7 +176,6 @@ curl -X POST "http://localhost:8000/models/default" \
 
 ```jsonc
 {
-  "request_id": "req-002",                    // 请求唯一标识
   "user_id": "user-123",                      // 用户 ID
   "base_model_task_id": "task_abc123def",     // 基础模特任务 ID (创建默认模特返回的 task_id)
   "edit_instructions": "将发型改为短发，肤色调亮一些",  // 编辑指令
@@ -191,7 +187,6 @@ curl -X POST "http://localhost:8000/models/default" \
 
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| request_id | string | ✅ | 请求唯一标识 |
 | user_id | string | ✅ | 用户 ID |
 | base_model_task_id | string | ✅ | 基础模特任务 ID (格式: task_xxxxxxx) |
 | edit_instructions | string | ✅ | 编辑指令 |
@@ -229,7 +224,6 @@ curl -X POST "http://localhost:8000/models/edit" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
-    "request_id": "req-002",
     "user_id": "user-123",
     "base_model_task_id": "task_abc123def",
     "edit_instructions": "将发型改为短发",
@@ -249,7 +243,6 @@ curl -X POST "http://localhost:8000/models/edit" \
 
 ```jsonc
 {
-  "request_id": "req-003",                    // 请求唯一标识
   "user_id": "user-123",                      // 用户 ID
   "base_model_task_id": "task_abc123def",     // 基础模特任务 ID (创建默认模特返回的 task_id)
   "angle": "front",                           // 视角: "front" / "side" / "back"
@@ -266,7 +259,6 @@ curl -X POST "http://localhost:8000/models/edit" \
 
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| request_id | string | ✅ | 请求唯一标识 |
 | user_id | string | ✅ | 用户 ID |
 | base_model_task_id | string | ✅ | 基础模特任务 ID (格式: task_xxxxxxx) |
 | angle | string | ✅ | 视角: "front" / "side" / "back" |
@@ -332,7 +324,6 @@ curl -X POST "http://localhost:8000/models/outfit" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
-    "request_id": "req-003",
     "user_id": "user-123",
     "base_model_task_id": "task_abc123def",
     "angle": "front",
@@ -486,7 +477,6 @@ curl -X POST "http://localhost:8000/models/default" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
-    "request_id": "test-001",
     "user_id": "user-001",
     "user_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     "body_profile": {
@@ -512,7 +502,6 @@ curl -X POST "http://localhost:8000/models/edit" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
-    "request_id": "test-002",
     "user_id": "user-001",
     "base_model_task_id": "task_abc123",
     "edit_instructions": "改为短发",
@@ -526,7 +515,6 @@ curl -X POST "http://localhost:8000/models/outfit" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-secret-token-here" \
   -d '{
-    "request_id": "test-003",
     "user_id": "user-001",
     "base_model_task_id": "task_abc123",
     "angle": "front",

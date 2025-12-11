@@ -24,11 +24,11 @@ class BaseModelTaskRepository(BaseTaskRepository[BaseModelTask]):
         task_id: str,
         request_id: str,
         user_id: str,
-        gender: str,
-        height_cm: float,
-        weight_kg: float,
-        age: int,
-        skin_tone: str,
+        gender: str | None = None,
+        height_cm: float | None = None,
+        weight_kg: float | None = None,
+        age: int | None = None,
+        skin_tone: str | None = None,
         body_shape: str | None = None,
     ) -> BaseModelTask:
         """
@@ -38,11 +38,11 @@ class BaseModelTaskRepository(BaseTaskRepository[BaseModelTask]):
             task_id: Apimart 返回的任务 ID
             request_id: 请求唯一标识
             user_id: 用户 ID
-            gender: 性别
-            height_cm: 身高 (cm)
-            weight_kg: 体重 (kg)
-            age: 年龄
-            skin_tone: 肤色
+            gender: 性别 (可选)
+            height_cm: 身高 (cm) (可选)
+            weight_kg: 体重 (kg) (可选)
+            age: 年龄 (可选)
+            skin_tone: 肤色 (可选)
             body_shape: 身材类型 (可选)
 
         Returns:
