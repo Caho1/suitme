@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     )
 
     # API 认证配置
+    api_auth_enabled: bool = Field(
+        default=False,
+        description="是否启用 API 认证（设为 True 开启）",
+    )
     api_auth_token: str = Field(
         default="",
         description="API 接口认证 Token（Bearer Token）",

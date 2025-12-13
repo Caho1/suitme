@@ -45,12 +45,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 # Bearer Token 认证
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def verify_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> str:
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> str | None:
     """
     验证 Bearer Token
     
@@ -58,18 +58,25 @@ async def verify_token(
         credentials: HTTP Authorization 头中的凭证
         
     Returns:
-        str: 验证通过的 token
+        str | None: 验证通过的 token，或 None（认证关闭时）
         
     Raises:
         HTTPException: token 无效时抛出 401 错误
     """
     settings = get_settings()
+    
+    # 如果认证未启用，直接跳过
+    if not settings.api_auth_enabled:
+        return None
+    
+    # 认证已启用，必须提供 token
+    if not credentials:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": 1005, "msg": "缺少认证 Token", "data": None},
+        )
+    
     expected_token = settings.api_auth_token
-    
-    # 如果未配置 token，跳过验证（开发环境）
-    if not expected_token:
-        return credentials.credentials
-    
     if credentials.credentials != expected_token:
         raise HTTPException(
             status_code=401,
