@@ -69,6 +69,21 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">body_type (身材类型)</label>
                     <input type="text" id="default-body_type" value="标准" class="w-full px-3 py-2 border rounded-md">
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">size (图片比例)</label>
+                    <select id="default-size" class="w-full px-3 py-2 border rounded-md">
+                        <option value="4:3" selected>4:3 (默认)</option>
+                        <option value="1:1">1:1</option>
+                        <option value="2:3">2:3</option>
+                        <option value="3:2">3:2</option>
+                        <option value="3:4">3:4</option>
+                        <option value="4:5">4:5</option>
+                        <option value="5:4">5:4</option>
+                        <option value="9:16">9:16</option>
+                        <option value="16:9">16:9</option>
+                        <option value="21:9">21:9</option>
+                    </select>
+                </div>
             </div>
             <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">用户照片 (将转换为 Base64 发送)</label>
@@ -103,6 +118,21 @@
                 <label class="block text-sm font-medium text-gray-700 mb-1">edit_instructions</label>
                 <textarea id="edit-instructions" rows="3" class="w-full px-3 py-2 border rounded-md">将发型改为短发</textarea>
             </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">size (图片比例)</label>
+                <select id="edit-size" class="w-full px-3 py-2 border rounded-md">
+                    <option value="4:3" selected>4:3 (默认)</option>
+                    <option value="1:1">1:1</option>
+                    <option value="2:3">2:3</option>
+                    <option value="3:2">3:2</option>
+                    <option value="3:4">3:4</option>
+                    <option value="4:5">4:5</option>
+                    <option value="5:4">5:4</option>
+                    <option value="9:16">9:16</option>
+                    <option value="16:9">16:9</option>
+                    <option value="21:9">21:9</option>
+                </select>
+            </div>
             <button onclick="editModel()" class="w-full bg-green-500 text-white py-2 rounded-md hover:bg-green-600">发送请求</button>
         </div>
 
@@ -127,6 +157,21 @@
                         <option value="back">back</option>
                     </select>
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">size (图片比例)</label>
+                    <select id="outfit-size" class="w-full px-3 py-2 border rounded-md">
+                        <option value="4:3" selected>4:3 (默认)</option>
+                        <option value="1:1">1:1</option>
+                        <option value="2:3">2:3</option>
+                        <option value="3:2">3:2</option>
+                        <option value="3:4">3:4</option>
+                        <option value="4:5">4:5</option>
+                        <option value="5:4">5:4</option>
+                        <option value="9:16">9:16</option>
+                        <option value="16:9">16:9</option>
+                        <option value="21:9">21:9</option>
+                    </select>
+                </div>
             </div>
             <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">服装图片 (将转换为 Base64 发送，支持多选)</label>
@@ -145,11 +190,16 @@
         <div id="tab-task" class="tab-content bg-white rounded-lg shadow p-6 hidden">
             <h2 class="text-xl font-semibold mb-4">GET /tasks/{task_id}</h2>
             <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-1">task_id (Apimart 返回的任务ID)</label>
-                <input type="text" id="query-task_id" value="" placeholder="task_01KC8E..." class="w-full px-3 py-2 border rounded-md">
-                <p class="text-xs text-gray-500 mt-1">新架构使用字符串类型的 task_id</p>
+                <label class="block text-sm font-medium text-gray-700 mb-1">task_id</label>
+                <input type="text" id="query-task_id" value="" placeholder="task_abc123def" class="w-full px-3 py-2 border rounded-md">
+                <p class="text-xs text-gray-500 mt-1">格式: task_xxxxxxx</p>
             </div>
-            <button onclick="queryTask()" class="w-full bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600">查询任务</button>
+            <div class="flex gap-2">
+                <button onclick="queryTask()" class="flex-1 bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600">查询一次</button>
+                <button onclick="startPolling()" id="poll-btn" class="flex-1 bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600">开始轮询</button>
+                <button onclick="stopPolling()" id="stop-poll-btn" class="flex-1 bg-red-500 text-white py-2 rounded-md hover:bg-red-600 hidden">停止轮询</button>
+            </div>
+            <div id="poll-status" class="mt-2 text-sm text-gray-500 hidden"></div>
         </div>
 
         <!-- 响应结果 -->
@@ -271,12 +321,19 @@
                 imageContainer.classList.add('hidden');
             }
             
-            // 自动填充 task_id 到查询和编辑/穿搭表单
+            // 自动填充 task_id 到查询表单
             const taskId = data.data?.task_id;
             if (taskId) {
                 document.getElementById('query-task_id').value = taskId;
-                document.getElementById('edit-task_id').value = taskId;
-                document.getElementById('outfit-task_id').value = taskId;
+                // 只有创建默认模特成功时才填充到编辑/穿搭表单
+                // (编辑和穿搭任务返回的 task_id 不应覆盖 base_model_task_id)
+                const status = data.data?.status;
+                const taskType = data.data?.type;
+                if (status === 'submitted' && !taskType) {
+                    // 这是创建任务的响应，填充到编辑/穿搭表单
+                    document.getElementById('edit-task_id').value = taskId;
+                    document.getElementById('outfit-task_id').value = taskId;
+                }
             }
         }
 
@@ -311,7 +368,8 @@
                     age: parseInt(document.getElementById('default-age').value),
                     skin_color: document.getElementById('default-skin_color').value,
                     body_type: document.getElementById('default-body_type').value
-                }
+                },
+                size: document.getElementById('default-size').value
             };
             try {
                 const res = await fetch(`${baseUrl}/models/default`, {
@@ -330,7 +388,8 @@
             const body = {
                 user_id: document.getElementById('edit-user_id').value,
                 base_model_task_id: document.getElementById('edit-task_id').value,
-                edit_instructions: document.getElementById('edit-instructions').value
+                edit_instructions: document.getElementById('edit-instructions').value,
+                size: document.getElementById('edit-size').value
             };
             try {
                 const res = await fetch(`${baseUrl}/models/edit`, {
@@ -354,7 +413,8 @@
                 user_id: document.getElementById('outfit-user_id').value,
                 base_model_task_id: document.getElementById('outfit-task_id').value,
                 angle: document.getElementById('outfit-angle').value,
-                outfit_images: selectedOutfitImages
+                outfit_images: selectedOutfitImages,
+                size: document.getElementById('outfit-size').value
             };
             try {
                 const res = await fetch(`${baseUrl}/models/outfit`, {
@@ -371,6 +431,10 @@
         async function queryTask() {
             const baseUrl = document.getElementById('baseUrl').value;
             const taskId = document.getElementById('query-task_id').value;
+            if (!taskId) {
+                showResponse({ error: '请输入 task_id' });
+                return;
+            }
             try {
                 const res = await fetch(`${baseUrl}/tasks/${taskId}`, {
                     headers: getHeaders()
@@ -379,6 +443,57 @@
             } catch (e) {
                 showResponse({ error: e.message });
             }
+        }
+
+        // 轮询相关
+        let pollingInterval = null;
+        
+        function startPolling() {
+            const taskId = document.getElementById('query-task_id').value;
+            if (!taskId) {
+                showResponse({ error: '请输入 task_id' });
+                return;
+            }
+            
+            document.getElementById('poll-btn').classList.add('hidden');
+            document.getElementById('stop-poll-btn').classList.remove('hidden');
+            document.getElementById('poll-status').classList.remove('hidden');
+            document.getElementById('poll-status').textContent = '轮询中...';
+            
+            // 立即查询一次
+            queryTask();
+            
+            // 每 2 秒轮询一次
+            pollingInterval = setInterval(async () => {
+                const baseUrl = document.getElementById('baseUrl').value;
+                const taskId = document.getElementById('query-task_id').value;
+                try {
+                    const res = await fetch(`${baseUrl}/tasks/${taskId}`, {
+                        headers: getHeaders()
+                    });
+                    const data = await res.json();
+                    showResponse(data);
+                    
+                    // 如果任务完成或失败，停止轮询
+                    const status = data.data?.status;
+                    if (status === 'completed' || status === 'failed') {
+                        stopPolling();
+                        document.getElementById('poll-status').textContent = `任务${status === 'completed' ? '完成' : '失败'}，已停止轮询`;
+                    }
+                } catch (e) {
+                    showResponse({ error: e.message });
+                }
+            }, 2000);
+        }
+        
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            document.getElementById('poll-btn').classList.remove('hidden');
+            document.getElementById('stop-poll-btn').classList.add('hidden');
+            document.getElementById('poll-status').textContent = '轮询已停止';
         }
     </script>
 </body>

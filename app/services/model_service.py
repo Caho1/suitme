@@ -79,7 +79,7 @@ class ModelService:
         await self.session.commit()
 
     async def _handle_task_completed(
-        self, task_id: str, image_base64: str | None, image_url: str | None
+        self, task_id: str, oss_url: str | None
     ) -> None:
         """处理任务完成 - 使用 TaskQueryService 统一更新"""
         result = await self.query_service.update_status(task_id, TaskStatus.COMPLETED, 100)
@@ -88,8 +88,7 @@ class ModelService:
                 task_type=result.task_type,
                 task_id=result.id,
                 angle=result.angle,
-                image_base64=image_base64,
-                image_url=image_url,
+                image_url=oss_url,
             )
         await self.session.commit()
 
@@ -125,7 +124,7 @@ class ModelService:
         request: DefaultModelRequest,
     ) -> TaskResponse:
         """
-        创建默认模特生成任务
+        创建默认模特生成任务（秒级返回）
 
         Args:
             request: 默认模特请求
@@ -135,21 +134,13 @@ class ModelService:
 
         Requirements: 2.1, 3.1
         """
-        # 1. 构建 Prompt
-        prompt = self._build_default_model_prompt(request)
-
-        # 2. 提交到 Apimart，获取 task_id
-        task_id = await self.apimart_client.submit_generation(
-            prompt=prompt,
-            image_urls=[request.picture_url],
-            size=request.size.value,
-        )
-
-        # 3. 创建任务记录（使用 Apimart 返回的 task_id，存储 body_profile 字段）
+        # 1. 生成本地 task_id，立即创建数据库记录
+        local_task_id = f"task_{uuid.uuid4().hex[:16]}"
         profile = request.body_profile
         request_id = str(uuid.uuid4())
+        
         task = await self.base_model_repo.create(
-            task_id=task_id,
+            task_id=local_task_id,
             request_id=request_id,
             user_id=request.user_id,
             gender=profile.gender,
@@ -161,18 +152,43 @@ class ModelService:
         )
         await self.session.commit()
 
-        # 4. 启动后台轮询
-        asyncio.create_task(self._poller.start_polling(task_id))
+        # 2. 后台异步提交到 Apimart 并启动轮询
+        asyncio.create_task(
+            self._submit_and_poll_default_model(local_task_id, request)
+        )
 
-        # 5. 返回响应
+        # 3. 立即返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
             data=TaskData(
-                task_id=task_id,
+                task_id=local_task_id,
                 status=TaskStatus.SUBMITTED.value,
             ),
         )
+
+    async def _submit_and_poll_default_model(
+        self, local_task_id: str, request: DefaultModelRequest
+    ) -> None:
+        """后台异步提交默认模特任务到 Apimart"""
+        try:
+            prompt = self._build_default_model_prompt(request)
+            apimart_task_id = await self.apimart_client.submit_generation(
+                prompt=prompt,
+                image_urls=[request.picture_url],
+                size=request.size.value,
+            )
+            # 绑定 apimart_task_id
+            await self.base_model_repo.update_apimart_task_id(local_task_id, apimart_task_id)
+            await self.session.commit()
+            # 启动轮询（使用 apimart_task_id）
+            asyncio.create_task(self._poller.start_polling(apimart_task_id, local_task_id))
+        except Exception as e:
+            # Apimart 调用失败，标记任务失败
+            await self.query_service.update_status(
+                local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
+            )
+            await self.session.commit()
 
     async def _get_base_model_image(self, base_model_task_id: str) -> tuple[int, str]:
         """
@@ -196,8 +212,8 @@ class ModelService:
         if image is None:
             raise BaseModelNotFoundError(f"{base_model_task_id} (no image)")
         
-        # 优先使用 base64，否则使用 URL
-        image_data = image.image_base64 or image.image_url
+        # 使用 OSS URL
+        image_data = image.image_url
         if not image_data:
             raise BaseModelNotFoundError(f"{base_model_task_id} (no image data)")
         
@@ -217,7 +233,7 @@ class ModelService:
 
     async def edit_model(self, request: EditModelRequest) -> TaskResponse:
         """
-        创建模特编辑任务
+        创建模特编辑任务（秒级返回）
 
         Args:
             request: 模特编辑请求
@@ -233,20 +249,12 @@ class ModelService:
         # 1. 获取基础模特图片（验证 base_model_id 存在）
         base_internal_id, base_image = await self._get_base_model_image(request.base_model_task_id)
 
-        # 2. 构建 Prompt
-        prompt = self._build_edit_model_prompt(request)
-
-        # 3. 提交到 Apimart，获取 task_id
-        task_id = await self.apimart_client.submit_generation(
-            prompt=prompt,
-            image_urls=[base_image],
-            size=request.size.value,
-        )
-
-        # 4. 创建任务记录（使用 EditTaskRepository）
+        # 2. 生成本地 task_id，立即创建数据库记录
+        local_task_id = f"task_{uuid.uuid4().hex[:16]}"
         request_id = str(uuid.uuid4())
+        
         task = await self.edit_repo.create(
-            task_id=task_id,
+            task_id=local_task_id,
             request_id=request_id,
             user_id=request.user_id,
             base_model_id=base_internal_id,
@@ -254,18 +262,42 @@ class ModelService:
         )
         await self.session.commit()
 
-        # 5. 启动后台轮询
-        asyncio.create_task(self._poller.start_polling(task_id))
+        # 3. 后台异步提交到 Apimart 并启动轮询
+        asyncio.create_task(
+            self._submit_and_poll_edit_model(local_task_id, request, base_image)
+        )
 
-        # 6. 返回响应
+        # 4. 立即返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
             data=TaskData(
-                task_id=task_id,
+                task_id=local_task_id,
                 status=TaskStatus.SUBMITTED.value,
             ),
         )
+
+    async def _submit_and_poll_edit_model(
+        self, local_task_id: str, request: EditModelRequest, base_image: str
+    ) -> None:
+        """后台异步提交编辑任务到 Apimart"""
+        try:
+            prompt = self._build_edit_model_prompt(request)
+            apimart_task_id = await self.apimart_client.submit_generation(
+                prompt=prompt,
+                image_urls=[base_image],
+                size=request.size.value,
+            )
+            # 绑定 apimart_task_id
+            await self.edit_repo.update_apimart_task_id(local_task_id, apimart_task_id)
+            await self.session.commit()
+            # 启动轮询
+            asyncio.create_task(self._poller.start_polling(apimart_task_id, local_task_id))
+        except Exception as e:
+            await self.query_service.update_status(
+                local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
+            )
+            await self.session.commit()
 
     def _build_outfit_prompt(self, request: OutfitModelRequest) -> str:
         """
@@ -281,7 +313,7 @@ class ModelService:
 
     async def create_outfit(self, request: OutfitModelRequest) -> TaskResponse:
         """
-        创建穿搭生成任务
+        创建穿搭生成任务（秒级返回）
 
         Args:
             request: 穿搭生成请求
@@ -297,20 +329,12 @@ class ModelService:
         # 1. 获取基础模特图片（验证 base_model_id 存在）
         base_internal_id, base_image = await self._get_base_model_image(request.base_model_task_id)
 
-        # 2. 构建 Prompt
-        prompt = self._build_outfit_prompt(request)
-
-        # 3. 提交到 Apimart，获取 task_id（基础模特图片 + 服装图片）
-        task_id = await self.apimart_client.submit_generation(
-            prompt=prompt,
-            image_urls=[base_image] + request.outfit_images,
-            size=request.size.value,
-        )
-
-        # 4. 创建任务记录（使用 OutfitTaskRepository）
+        # 2. 生成本地 task_id，立即创建数据库记录
+        local_task_id = f"task_{uuid.uuid4().hex[:16]}"
         request_id = str(uuid.uuid4())
+        
         task = await self.outfit_repo.create(
-            task_id=task_id,
+            task_id=local_task_id,
             request_id=request_id,
             user_id=request.user_id,
             base_model_id=base_internal_id,
@@ -318,16 +342,40 @@ class ModelService:
         )
         await self.session.commit()
 
-        # 5. 启动后台轮询
-        asyncio.create_task(self._poller.start_polling(task_id))
+        # 3. 后台异步提交到 Apimart 并启动轮询
+        asyncio.create_task(
+            self._submit_and_poll_outfit(local_task_id, request, base_image)
+        )
 
-        # 6. 返回响应
+        # 4. 立即返回响应
         return TaskResponse(
             code=0,
             msg="accepted",
             data=TaskData(
-                task_id=task_id,
+                task_id=local_task_id,
                 status=TaskStatus.SUBMITTED.value,
                 angle=request.angle.value,
             ),
         )
+
+    async def _submit_and_poll_outfit(
+        self, local_task_id: str, request: OutfitModelRequest, base_image: str
+    ) -> None:
+        """后台异步提交穿搭任务到 Apimart"""
+        try:
+            prompt = self._build_outfit_prompt(request)
+            apimart_task_id = await self.apimart_client.submit_generation(
+                prompt=prompt,
+                image_urls=[base_image] + request.outfit_images,
+                size=request.size.value,
+            )
+            # 绑定 apimart_task_id
+            await self.outfit_repo.update_apimart_task_id(local_task_id, apimart_task_id)
+            await self.session.commit()
+            # 启动轮询
+            asyncio.create_task(self._poller.start_polling(apimart_task_id, local_task_id))
+        except Exception as e:
+            await self.query_service.update_status(
+                local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
+            )
+            await self.session.commit()

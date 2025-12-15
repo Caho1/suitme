@@ -21,7 +21,6 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -61,6 +60,12 @@ class BaseModelTask(Base):
         String(128), 
         nullable=False, 
         unique=True, 
+        index=True,
+    )
+    apimart_task_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        unique=True,
         index=True,
     )
     request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -133,6 +138,12 @@ class EditTask(Base):
         unique=True, 
         index=True,
     )
+    apimart_task_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     
@@ -200,6 +211,12 @@ class OutfitTask(Base):
         unique=True, 
         index=True,
     )
+    apimart_task_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     
@@ -255,7 +272,7 @@ class GenerationImage(Base):
     """
     生成图片表
     
-    存储任务完成后生成的图片数据。
+    存储任务完成后生成的图片 OSS URL。
     使用 task_type 和 task_id 实现多态关联到不同任务表。
     """
     __tablename__ = "generation_image"
@@ -277,7 +294,6 @@ class GenerationImage(Base):
     
     # Image data
     angle: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    image_base64: Mapped[str | None] = mapped_column(LONGTEXT, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     
     # Timestamps

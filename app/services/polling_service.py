@@ -109,18 +109,16 @@ class PollingService:
     async def _handle_task_completed(
         self,
         task_id: str,
-        image_base64: str | None,
-        image_url: str | None,
+        oss_url: str | None,
     ) -> None:
         """
         处理任务完成 - 使用 TaskQueryService 统一更新
 
-        下载图片、存储 Base64/上传 OSS、写入 generation_image 表。
+        将 OSS URL 写入 generation_image 表。
 
         Args:
             task_id: Apimart 任务 ID
-            image_base64: 图片 Base64 数据
-            image_url: 图片 URL
+            oss_url: 图片 OSS URL
 
         Requirements: 4.3, 1.5, 8.2
         """
@@ -130,17 +128,16 @@ class PollingService:
                 logger.error(f"Task {task_id} not found for completion")
                 return
 
-            # 创建图片记录
+            # 创建图片记录（只存储 OSS URL）
             await self.image_repo.create(
                 task_type=result.task_type,
                 task_id=result.id,
                 angle=result.angle,
-                image_base64=image_base64,
-                image_url=image_url,
+                image_url=oss_url,
             )
 
             await self.session.commit()
-            logger.info(f"Task {task_id} completed and image saved")
+            logger.info(f"Task {task_id} completed and image saved to OSS: {oss_url}")
 
             # 触发回调
             if self._on_callback:

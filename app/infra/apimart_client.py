@@ -82,7 +82,7 @@ class ApimartClient:
         self,
         prompt: str,
         image_urls: list[str],
-        model: str = "gemini-3-pro-image-preview",
+        model: str | None = None,
         size: str = "4:3",
         n: int = 1,
     ) -> str:
@@ -92,7 +92,7 @@ class ApimartClient:
         Args:
             prompt: 生成提示词
             image_urls: 输入图片 URL 或 Base64 Data URI 列表
-            model: 模型名称
+            model: 模型名称（可选，默认使用配置中的模型）
             size: 图片尺寸比例
             n: 生成数量
 
@@ -102,8 +102,11 @@ class ApimartClient:
         Raises:
             ApimartError: API 调用失败时抛出
         """
+        # 使用传入的模型或配置中的默认模型
+        actual_model = model or self._settings.apimart_model
+        
         payload = {
-            "model": model,
+            "model": actual_model,
             "prompt": prompt,
             "size": size,
             "n": n,

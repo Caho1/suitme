@@ -123,3 +123,24 @@ class BaseTaskRepository(Generic[T]):
             )
         )
         return list(result.scalars().all())
+
+    async def update_apimart_task_id(
+        self, task_id: str, apimart_task_id: str
+    ) -> T | None:
+        """
+        绑定 Apimart 返回的 task_id
+
+        Args:
+            task_id: 本地生成的 task_id
+            apimart_task_id: Apimart 返回的 task_id
+
+        Returns:
+            更新后的任务对象
+        """
+        await self.session.execute(
+            update(self.model)
+            .where(self.model.task_id == task_id)
+            .values(apimart_task_id=apimart_task_id)
+        )
+        await self.session.flush()
+        return await self.get_by_task_id(task_id)

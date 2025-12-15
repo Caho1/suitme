@@ -5,10 +5,8 @@ Task Service
 包括任务状态查询、更新、完成和失败处理。
 """
 
-import base64
 import logging
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -23,6 +21,7 @@ from app.schemas import (
 from app.services.task_query_service import TaskQueryService
 from app.infra.apimart_client import ApimartClient
 from app.infra.apimart_errors import ApimartError
+from app.infra.oss_client import OSSClient
 
 logger = logging.getLogger(__name__)
 
@@ -58,41 +57,26 @@ VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
 class TaskService:
     """任务状态管理服务"""
 
-    def __init__(self, session: AsyncSession, apimart_client: ApimartClient | None = None):
+    def __init__(
+        self,
+        session: AsyncSession,
+        apimart_client: ApimartClient | None = None,
+        oss_client: OSSClient | None = None,
+    ):
         """
         初始化任务服务
 
         Args:
             session: 数据库会话
             apimart_client: Apimart 客户端（可选）
+            oss_client: OSS 客户端（可选）
         """
         self.session = session
         self.image_repo = ImageRepository(session)
         self.query_service = TaskQueryService(session)
         self._apimart_client = apimart_client or ApimartClient()
+        self._oss_client = oss_client or OSSClient()
         self._settings = get_settings()
-        self._http_client: httpx.AsyncClient | None = None
-
-    async def _get_http_client(self) -> httpx.AsyncClient:
-        """获取 HTTP 客户端用于下载图片"""
-        if self._http_client is None:
-            self._http_client = httpx.AsyncClient(
-                timeout=self._settings.http_timeout,
-            )
-        return self._http_client
-
-    async def _download_image_as_base64(self, image_url: str) -> str | None:
-        """下载图片并转换为 Base64"""
-        try:
-            client = await self._get_http_client()
-            response = await client.get(image_url)
-            response.raise_for_status()
-            content_type = response.headers.get("content-type", "image/png")
-            image_data = base64.b64encode(response.content).decode("utf-8")
-            return f"data:{content_type};base64,{image_data}"
-        except Exception as e:
-            logger.warning(f"Failed to download image: {e}")
-            return None
 
     def _validate_status_transition(
         self,
@@ -120,7 +104,7 @@ class TaskService:
         如果任务未完成，会同步从 Apimart 获取最新状态并更新数据库。
 
         Args:
-            task_id: 任务 ID (格式: task_xxxxxxx)
+            task_id: 本地任务 ID (格式: task_xxxxxxx)
 
         Returns:
             TaskStatusResponse: 任务状态响应
@@ -135,8 +119,10 @@ class TaskService:
             raise TaskNotFoundError(task_id)
 
         # 如果任务还在进行中，同步从 Apimart 获取最新状态
+        # 需要使用 apimart_task_id 去请求 Apimart API
         if result.status in (TaskStatus.SUBMITTED, TaskStatus.PROCESSING):
-            result = await self._sync_task_status_from_apimart(task_id, result)
+            if result.apimart_task_id:
+                result = await self._sync_task_status_from_apimart(task_id, result.apimart_task_id, result)
 
         # 构建图片信息（如果任务已完成）
         image_data = None
@@ -144,7 +130,6 @@ class TaskService:
             image = await self.image_repo.get_by_task(result.task_type, result.id)
             if image:
                 image_data = ImageData(
-                    image_base64=image.image_base64,
                     image_url=image.image_url,
                 )
 
@@ -162,41 +147,47 @@ class TaskService:
             ),
         )
 
-    async def _sync_task_status_from_apimart(self, task_id: str, current_result):
+    async def _sync_task_status_from_apimart(self, task_id: str, apimart_task_id: str, current_result):
         """
         从 Apimart 同步任务状态并更新数据库
         
         Args:
-            task_id: Apimart 任务 ID
+            task_id: 本地任务 ID (格式: task_xxxxxxx)
+            apimart_task_id: Apimart 外部任务 ID
             current_result: 当前数据库中的任务结果
             
         Returns:
             更新后的任务结果
         """
         try:
-            apimart_status = await self._apimart_client.get_task_status(task_id)
+            # 使用 apimart_task_id 请求 Apimart API
+            apimart_status = await self._apimart_client.get_task_status(apimart_task_id)
             
             if apimart_status.is_completed:
-                # 任务完成 - 下载图片并更新数据库
-                logger.info(f"Task {task_id} completed, syncing from Apimart")
+                # 任务完成 - 下载图片上传到 OSS 并更新数据库
+                logger.info(f"Task {task_id} (apimart: {apimart_task_id}) completed, syncing from Apimart")
                 
-                image_base64: str | None = None
-                image_url: str | None = None
+                oss_url: str | None = None
                 
                 if apimart_status.image_urls:
-                    image_url = apimart_status.image_urls[0]
-                    image_base64 = await self._download_image_as_base64(image_url)
+                    apimart_image_url = apimart_status.image_urls[0]
+                    # 下载图片并上传到 OSS
+                    oss_url = await self._oss_client.download_and_upload(apimart_image_url, task_id)
+                    if oss_url:
+                        logger.info(f"Task {task_id} image uploaded to OSS: {oss_url}")
+                    else:
+                        logger.warning(f"Task {task_id} failed to upload to OSS, using original URL")
+                        oss_url = apimart_image_url  # 降级使用原始 URL
                 
-                # 更新任务状态
+                # 更新任务状态（使用本地 task_id）
                 await self.query_service.update_status(task_id, TaskStatus.COMPLETED, 100)
                 
-                # 创建图片记录
+                # 创建图片记录（只存 OSS URL）
                 await self.image_repo.create(
                     task_type=current_result.task_type,
                     task_id=current_result.id,
                     angle=current_result.angle,
-                    image_base64=image_base64,
-                    image_url=image_url,
+                    image_url=oss_url,
                 )
                 
                 await self.session.commit()
@@ -211,7 +202,7 @@ class TaskService:
                     error_msg = error_msg.get("message", str(error_msg))
                 error_msg = str(error_msg) if error_msg else "Unknown error"
                 
-                logger.error(f"Task {task_id} failed: {error_msg}")
+                logger.error(f"Task {task_id} (apimart: {apimart_task_id}) failed: {error_msg}")
                 await self.query_service.update_status(task_id, TaskStatus.FAILED, error_message=error_msg)
                 await self.session.commit()
                 
@@ -229,9 +220,9 @@ class TaskService:
                     return await self.query_service.find_by_task_id(task_id)
                     
         except ApimartError as e:
-            logger.warning(f"Failed to sync task {task_id} from Apimart: {e}")
+            logger.warning(f"Failed to sync task {task_id} (apimart: {apimart_task_id}) from Apimart: {e}")
         except Exception as e:
-            logger.exception(f"Unexpected error syncing task {task_id}: {e}")
+            logger.exception(f"Unexpected error syncing task {task_id} (apimart: {apimart_task_id}): {e}")
         
         # 如果同步失败，返回原始结果
         return current_result
@@ -269,7 +260,6 @@ class TaskService:
     async def complete_task(
         self,
         task_id: str,
-        image_base64: str | None = None,
         image_url: str | None = None,
     ) -> None:
         """
@@ -277,7 +267,6 @@ class TaskService:
 
         Args:
             task_id: 任务 ID (格式: task_xxxxxxx)
-            image_base64: 图片 Base64 数据
             image_url: 图片 OSS URL
 
         Raises:
@@ -301,7 +290,6 @@ class TaskService:
             task_type=result.task_type,
             task_id=result.id,
             angle=result.angle,
-            image_base64=image_base64,
             image_url=image_url,
         )
 

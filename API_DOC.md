@@ -380,8 +380,7 @@ curl -X POST "http://localhost:8000/models/outfit" \
     "type": "default",
     "angle": null,
     "image": {
-      "image_base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
-      "image_url": "https://oss.example.com/images/xxx.jpg"
+      "image_url": "https://suitme.oss-cn-shenzhen.aliyuncs.com/images/2025/01/01/task_xxx.png"
     },
     "error_message": null
   }

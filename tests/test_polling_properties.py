@@ -118,8 +118,7 @@ image_url_strategy = st.text(
     weight_kg=weight_strategy,
     age=age_strategy,
     skin_tone=skin_tone_strategy,
-    image_base64=image_base64_strategy,
-    image_url=image_url_strategy,
+    oss_url=image_url_strategy,
 )
 async def test_completed_task_has_image_record(
     task_id: str,
@@ -130,18 +129,17 @@ async def test_completed_task_has_image_record(
     weight_kg: float,
     age: int,
     skin_tone: str,
-    image_base64: str | None,
-    image_url: str | None,
+    oss_url: str | None,
 ):
     """
     **Feature: database-refactor, Property 10: 任务完成图片持久化**
     
     *For any* 完成的任务，generation_image 表中 SHALL 存在对应记录，
-    包含 task_type、task_id 和图片数据（image_base64 或 image_url 至少一个非空）。
+    包含 task_type、task_id 和图片 OSS URL。
     """
-    # 确保至少有一个图片数据
-    if image_base64 is None and image_url is None:
-        image_base64 = VALID_IMAGE_BASE64
+    # 确保有 OSS URL
+    if oss_url is None:
+        oss_url = "https://example.com/images/test.png"
     
     async with await get_test_session() as session:
         base_repo = BaseModelTaskRepository(session)
@@ -169,11 +167,10 @@ async def test_completed_task_has_image_record(
         # 创建 PollingService 并模拟任务完成处理
         polling_service = PollingService(session)
         
-        # 直接调用内部的完成处理方法
+        # 直接调用内部的完成处理方法（新签名只接收 oss_url）
         await polling_service._handle_task_completed(
             task_id=task_id,
-            image_base64=image_base64,
-            image_url=image_url,
+            oss_url=oss_url,
         )
         
         # 验证任务状态已更新为 COMPLETED
@@ -189,14 +186,8 @@ async def test_completed_task_has_image_record(
         assert image.task_id == task.id
         assert image.task_type == TaskType.MODEL
         
-        # 验证至少有一个图片数据非空
-        assert image.image_base64 is not None or image.image_url is not None
-        
-        # 验证图片数据正确
-        if image_base64 is not None:
-            assert image.image_base64 == image_base64
-        if image_url is not None:
-            assert image.image_url == image_url
+        # 验证 OSS URL 正确
+        assert image.image_url == oss_url
         
         # 回滚以便下次测试
         await session.rollback()
@@ -213,83 +204,13 @@ async def test_completed_task_has_image_record(
     weight_kg=weight_strategy,
     age=age_strategy,
     skin_tone=skin_tone_strategy,
-)
-async def test_completed_task_image_with_base64_only(
-    task_id: str,
-    request_id: str,
-    user_id: str,
-    gender: str,
-    height_cm: float,
-    weight_kg: float,
-    age: int,
-    skin_tone: str,
-):
-    """
-    **Feature: database-refactor, Property 10: 任务完成图片持久化**
-    
-    *For any* 完成的任务，当只提供 image_base64 时，
-    generation_image 表中 SHALL 存在对应记录且 image_base64 非空。
-    """
-    async with await get_test_session() as session:
-        base_repo = BaseModelTaskRepository(session)
-        image_repo = ImageRepository(session)
-        
-        # 创建任务
-        task = await base_repo.create(
-            task_id=task_id,
-            request_id=request_id,
-            user_id=user_id,
-            gender=gender,
-            height_cm=height_cm,
-            weight_kg=weight_kg,
-            age=age,
-            skin_tone=skin_tone,
-        )
-        
-        # 更新为 PROCESSING
-        await base_repo.update_status(
-            task_id=task_id,
-            status=TaskStatus.PROCESSING,
-            progress=50,
-        )
-        
-        # 创建 PollingService 并模拟任务完成处理
-        polling_service = PollingService(session)
-        
-        # 只提供 Base64 数据
-        await polling_service._handle_task_completed(
-            task_id=task_id,
-            image_base64=VALID_IMAGE_BASE64,
-            image_url=None,
-        )
-        
-        # 验证图片记录
-        image = await image_repo.get_by_task(TaskType.MODEL, task.id)
-        assert image is not None
-        assert image.image_base64 == VALID_IMAGE_BASE64
-        assert image.image_url is None
-        
-        await session.rollback()
-
-
-@pytest.mark.asyncio
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(
-    task_id=task_id_strategy,
-    request_id=request_id_strategy,
-    user_id=user_id_strategy,
-    gender=gender_strategy,
-    height_cm=height_strategy,
-    weight_kg=weight_strategy,
-    age=age_strategy,
-    skin_tone=skin_tone_strategy,
-    image_url=st.text(
+    oss_url=st.text(
         alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="-_./"),
         min_size=5,
         max_size=100,
     ).map(lambda x: f"https://example.com/{x}.png"),
 )
-async def test_completed_task_image_with_url_only(
+async def test_completed_task_image_with_oss_url(
     task_id: str,
     request_id: str,
     user_id: str,
@@ -298,12 +219,12 @@ async def test_completed_task_image_with_url_only(
     weight_kg: float,
     age: int,
     skin_tone: str,
-    image_url: str,
+    oss_url: str,
 ):
     """
     **Feature: database-refactor, Property 10: 任务完成图片持久化**
     
-    *For any* 完成的任务，当只提供 image_url 时，
+    *For any* 完成的任务，当提供 oss_url 时，
     generation_image 表中 SHALL 存在对应记录且 image_url 非空。
     """
     async with await get_test_session() as session:
@@ -332,94 +253,16 @@ async def test_completed_task_image_with_url_only(
         # 创建 PollingService 并模拟任务完成处理
         polling_service = PollingService(session)
         
-        # 只提供 URL
+        # 提供 OSS URL
         await polling_service._handle_task_completed(
             task_id=task_id,
-            image_base64=None,
-            image_url=image_url,
+            oss_url=oss_url,
         )
         
         # 验证图片记录
         image = await image_repo.get_by_task(TaskType.MODEL, task.id)
         assert image is not None
-        assert image.image_base64 is None
-        assert image.image_url == image_url
-        
-        await session.rollback()
-
-
-@pytest.mark.asyncio
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(
-    task_id=task_id_strategy,
-    request_id=request_id_strategy,
-    user_id=user_id_strategy,
-    gender=gender_strategy,
-    height_cm=height_strategy,
-    weight_kg=weight_strategy,
-    age=age_strategy,
-    skin_tone=skin_tone_strategy,
-    image_url=st.text(
-        alphabet=st.characters(whitelist_categories=("L", "N"), whitelist_characters="-_./"),
-        min_size=5,
-        max_size=100,
-    ).map(lambda x: f"https://example.com/{x}.png"),
-)
-async def test_completed_task_image_with_both(
-    task_id: str,
-    request_id: str,
-    user_id: str,
-    gender: str,
-    height_cm: float,
-    weight_kg: float,
-    age: int,
-    skin_tone: str,
-    image_url: str,
-):
-    """
-    **Feature: database-refactor, Property 10: 任务完成图片持久化**
-    
-    *For any* 完成的任务，当同时提供 image_base64 和 image_url 时，
-    generation_image 表中 SHALL 存在对应记录且两者都非空。
-    """
-    async with await get_test_session() as session:
-        base_repo = BaseModelTaskRepository(session)
-        image_repo = ImageRepository(session)
-        
-        # 创建任务
-        task = await base_repo.create(
-            task_id=task_id,
-            request_id=request_id,
-            user_id=user_id,
-            gender=gender,
-            height_cm=height_cm,
-            weight_kg=weight_kg,
-            age=age,
-            skin_tone=skin_tone,
-        )
-        
-        # 更新为 PROCESSING
-        await base_repo.update_status(
-            task_id=task_id,
-            status=TaskStatus.PROCESSING,
-            progress=50,
-        )
-        
-        # 创建 PollingService 并模拟任务完成处理
-        polling_service = PollingService(session)
-        
-        # 同时提供 Base64 和 URL
-        await polling_service._handle_task_completed(
-            task_id=task_id,
-            image_base64=VALID_IMAGE_BASE64,
-            image_url=image_url,
-        )
-        
-        # 验证图片记录
-        image = await image_repo.get_by_task(TaskType.MODEL, task.id)
-        assert image is not None
-        assert image.image_base64 == VALID_IMAGE_BASE64
-        assert image.image_url == image_url
+        assert image.image_url == oss_url
         
         await session.rollback()
 
@@ -499,8 +342,7 @@ async def test_outfit_task_image_has_angle(
         
         await polling_service._handle_task_completed(
             task_id=outfit_task_id,
-            image_base64=VALID_IMAGE_BASE64,
-            image_url=None,
+            oss_url="https://example.com/images/outfit.png",
         )
         
         # 验证图片记录
@@ -509,6 +351,6 @@ async def test_outfit_task_image_has_angle(
         assert image.task_type == TaskType.OUTFIT
         assert image.task_id == outfit_task.id
         assert image.angle == angle
-        assert image.image_base64 == VALID_IMAGE_BASE64
+        assert image.image_url == "https://example.com/images/outfit.png"
         
         await session.rollback()

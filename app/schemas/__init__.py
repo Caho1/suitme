@@ -168,7 +168,6 @@ class TaskResponse(BaseModel):
 
 class ImageData(BaseModel):
     """图片数据"""
-    image_base64: str | None = Field(default=None, description="图片 Base64")
     image_url: str | None = Field(default=None, description="图片 OSS URL")
 
 

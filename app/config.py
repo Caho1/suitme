@@ -8,7 +8,7 @@
 import os
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,16 +22,24 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # 数据库配置
-    # 默认使用 SQLite（服务器环境），本地通过 .env 配置 MySQL
+    # 数据库配置（必须配置 MySQL）
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./suitme.db",
-        description="数据库连接 URL",
+        default="",
+        description="MySQL 数据库连接 URL (必填)",
     )
     database_echo: bool = Field(
         default=False,
         description="是否打印 SQL 语句",
     )
+
+    @model_validator(mode="after")
+    def validate_database_url(self) -> "Settings":
+        """验证数据库配置"""
+        if not self.database_url:
+            raise ValueError("DATABASE_URL 未配置，必须配置 MySQL 数据库连接")
+        if not self.database_url.startswith("mysql"):
+            raise ValueError("DATABASE_URL 必须是 MySQL 连接 (mysql+aiomysql://...)")
+        return self
 
     # Apimart API 配置
     apimart_api_key: str = Field(
@@ -42,10 +50,14 @@ class Settings(BaseSettings):
         default="https://api.apimart.ai/v1",
         description="Apimart API 基础 URL",
     )
+    apimart_model: str = Field(
+        default="gemini-3-pro-image-preview",
+        description="Apimart 图像生成模型名称",
+    )
 
     # 任务轮询配置
     task_poll_interval: float = Field(
-        default=2.0,
+        default=5.0,
         description="任务轮询间隔（秒）",
     )
     task_timeout: float = Field(
@@ -95,6 +107,24 @@ class Settings(BaseSettings):
     retry_max_delay: float = Field(
         default=32.0,
         description="重试最大延迟（秒）",
+    )
+
+    # 阿里云 OSS 配置
+    oss_endpoint: str = Field(
+        default="oss-cn-shenzhen.aliyuncs.com",
+        description="OSS Endpoint",
+    )
+    oss_bucket: str = Field(
+        default="suitme",
+        description="OSS Bucket 名称",
+    )
+    oss_access_key_id: str = Field(
+        default="",
+        description="OSS Access Key ID",
+    )
+    oss_access_key_secret: str = Field(
+        default="",
+        description="OSS Access Key Secret",
     )
 
 

@@ -22,7 +22,6 @@ class ImageRepository:
         task_type: TaskType,
         task_id: int,
         angle: str | None = None,
-        image_base64: str | None = None,
         image_url: str | None = None,
     ) -> GenerationImage:
         """
@@ -32,7 +31,6 @@ class ImageRepository:
             task_type: 任务类型 (model/edit/outfit)
             task_id: 关联的任务内部 ID
             angle: 视角
-            image_base64: 图片 Base64 数据
             image_url: 图片 OSS URL
 
         Returns:
@@ -42,7 +40,6 @@ class ImageRepository:
             task_type=task_type,
             task_id=task_id,
             angle=angle,
-            image_base64=image_base64,
             image_url=image_url,
         )
         self.session.add(image)

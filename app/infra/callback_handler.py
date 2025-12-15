@@ -35,7 +35,6 @@ class CallbackPayload:
     status: str
     type: str
     angle: str | None = None
-    image_base64: str | None = None
     image_url: str | None = None
     error_message: str | None = None
 
@@ -47,7 +46,6 @@ class CallbackPayload:
                 "status": self.status,
                 "type": self.type,
                 "angle": self.angle,
-                "image_base64": self.image_base64,
                 "image_url": self.image_url,
                 "error_message": self.error_message,
             }.items() if v is not None
@@ -97,7 +95,6 @@ class CallbackHandler:
         status: str,
         task_type: str,
         angle: str | None = None,
-        image_base64: str | None = None,
         image_url: str | None = None,
         error_message: str | None = None,
     ) -> bool:
@@ -109,7 +106,6 @@ class CallbackHandler:
             status: 任务状态 (completed/failed)
             task_type: 任务类型 (default/edit/outfit)
             angle: 视角 (仅穿搭任务)
-            image_base64: 图片 Base64 数据
             image_url: 图片 OSS URL
             error_message: 错误信息 (失败时)
 
@@ -130,7 +126,6 @@ class CallbackHandler:
             status=status,
             type=task_type,
             angle=angle,
-            image_base64=image_base64,
             image_url=image_url,
             error_message=error_message,
         )

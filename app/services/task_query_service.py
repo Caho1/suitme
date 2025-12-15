@@ -42,8 +42,13 @@ class TaskQueryResult:
     
     @property
     def task_id(self) -> str:
-        """Apimart 任务 ID"""
+        """本地任务 ID"""
         return self.task.task_id
+    
+    @property
+    def apimart_task_id(self) -> str | None:
+        """Apimart 外部任务 ID"""
+        return self.task.apimart_task_id
     
     @property
     def status(self) -> TaskStatus:
