@@ -9,7 +9,6 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.models import TaskStatus, TaskType
 from app.repositories import ImageRepository
 from app.schemas import (
@@ -19,9 +18,6 @@ from app.schemas import (
     ErrorResponse,
 )
 from app.services.task_query_service import TaskQueryService
-from app.infra.apimart_client import ApimartClient
-from app.infra.apimart_errors import ApimartError
-from app.infra.oss_client import OSSClient
 
 logger = logging.getLogger(__name__)
 
@@ -57,26 +53,16 @@ VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
 class TaskService:
     """任务状态管理服务"""
 
-    def __init__(
-        self,
-        session: AsyncSession,
-        apimart_client: ApimartClient | None = None,
-        oss_client: OSSClient | None = None,
-    ):
+    def __init__(self, session: AsyncSession):
         """
         初始化任务服务
 
         Args:
             session: 数据库会话
-            apimart_client: Apimart 客户端（可选）
-            oss_client: OSS 客户端（可选）
         """
         self.session = session
         self.image_repo = ImageRepository(session)
         self.query_service = TaskQueryService(session)
-        self._apimart_client = apimart_client or ApimartClient()
-        self._oss_client = oss_client or OSSClient()
-        self._settings = get_settings()
 
     def _validate_status_transition(
         self,
@@ -99,9 +85,10 @@ class TaskService:
 
     async def get_task_status(self, task_id: str) -> TaskStatusResponse:
         """
-        获取任务状态
+        获取任务状态（只读查询）
         
-        如果任务未完成，会同步从 Apimart 获取最新状态并更新数据库。
+        直接返回数据库中的状态，不主动同步 Apimart。
+        状态更新由后台 TaskPoller 负责。
 
         Args:
             task_id: 本地任务 ID (格式: task_xxxxxxx)
@@ -117,12 +104,6 @@ class TaskService:
         result = await self.query_service.find_by_task_id(task_id)
         if result is None:
             raise TaskNotFoundError(task_id)
-
-        # 如果任务还在进行中，同步从 Apimart 获取最新状态
-        # 需要使用 apimart_task_id 去请求 Apimart API
-        if result.status in (TaskStatus.SUBMITTED, TaskStatus.PROCESSING):
-            if result.apimart_task_id:
-                result = await self._sync_task_status_from_apimart(task_id, result.apimart_task_id, result)
 
         # 构建图片信息（如果任务已完成）
         image_data = None
@@ -146,86 +127,6 @@ class TaskService:
                 error_message=result.error_message,
             ),
         )
-
-    async def _sync_task_status_from_apimart(self, task_id: str, apimart_task_id: str, current_result):
-        """
-        从 Apimart 同步任务状态并更新数据库
-        
-        Args:
-            task_id: 本地任务 ID (格式: task_xxxxxxx)
-            apimart_task_id: Apimart 外部任务 ID
-            current_result: 当前数据库中的任务结果
-            
-        Returns:
-            更新后的任务结果
-        """
-        try:
-            # 使用 apimart_task_id 请求 Apimart API
-            apimart_status = await self._apimart_client.get_task_status(apimart_task_id)
-            
-            if apimart_status.is_completed:
-                # 任务完成 - 下载图片上传到 OSS 并更新数据库
-                logger.info(f"Task {task_id} (apimart: {apimart_task_id}) completed, syncing from Apimart")
-                
-                oss_url: str | None = None
-                
-                if apimart_status.image_urls:
-                    apimart_image_url = apimart_status.image_urls[0]
-                    # 下载图片并上传到 OSS
-                    oss_url = await self._oss_client.download_and_upload(apimart_image_url, task_id)
-                    if oss_url:
-                        logger.info(f"Task {task_id} image uploaded to OSS: {oss_url}")
-                    else:
-                        logger.warning(f"Task {task_id} failed to upload to OSS, using original URL")
-                        oss_url = apimart_image_url  # 降级使用原始 URL
-                
-                # 更新任务状态（使用本地 task_id）
-                await self.query_service.update_status(task_id, TaskStatus.COMPLETED, 100)
-                
-                # 创建图片记录（只存 OSS URL）
-                await self.image_repo.create(
-                    task_type=current_result.task_type,
-                    task_id=current_result.id,
-                    angle=current_result.angle,
-                    image_url=oss_url,
-                )
-                
-                await self.session.commit()
-                
-                # 重新获取更新后的结果
-                return await self.query_service.find_by_task_id(task_id)
-                
-            elif apimart_status.is_failed:
-                # 任务失败 - 更新数据库
-                error_msg = apimart_status.error
-                if isinstance(error_msg, dict):
-                    error_msg = error_msg.get("message", str(error_msg))
-                error_msg = str(error_msg) if error_msg else "Unknown error"
-                
-                logger.error(f"Task {task_id} (apimart: {apimart_task_id}) failed: {error_msg}")
-                await self.query_service.update_status(task_id, TaskStatus.FAILED, error_message=error_msg)
-                await self.session.commit()
-                
-                return await self.query_service.find_by_task_id(task_id)
-                
-            else:
-                # 任务进行中 - 更新进度
-                if current_result.status == TaskStatus.SUBMITTED:
-                    await self.query_service.update_status(task_id, TaskStatus.PROCESSING, apimart_status.progress)
-                    await self.session.commit()
-                    return await self.query_service.find_by_task_id(task_id)
-                elif current_result.progress != apimart_status.progress:
-                    await self.query_service.update_status(task_id, TaskStatus.PROCESSING, apimart_status.progress)
-                    await self.session.commit()
-                    return await self.query_service.find_by_task_id(task_id)
-                    
-        except ApimartError as e:
-            logger.warning(f"Failed to sync task {task_id} (apimart: {apimart_task_id}) from Apimart: {e}")
-        except Exception as e:
-            logger.exception(f"Unexpected error syncing task {task_id} (apimart: {apimart_task_id}): {e}")
-        
-        # 如果同步失败，返回原始结果
-        return current_result
 
     async def update_task_status(
         self,

@@ -5,10 +5,15 @@ Image Repository
 支持多态查询，通过 task_type 区分不同任务类型的图片。
 """
 
+import logging
+
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import GenerationImage, TaskType
+
+logger = logging.getLogger(__name__)
 
 
 class ImageRepository:
@@ -23,9 +28,9 @@ class ImageRepository:
         task_id: int,
         angle: str | None = None,
         image_url: str | None = None,
-    ) -> GenerationImage:
+    ) -> tuple[GenerationImage, bool]:
         """
-        创建图片记录
+        创建图片记录，利用唯一约束处理并发
 
         Args:
             task_type: 任务类型 (model/edit/outfit)
@@ -34,18 +39,28 @@ class ImageRepository:
             image_url: 图片 OSS URL
 
         Returns:
-            创建的图片对象
+            tuple[GenerationImage, bool]: (图片对象, 是否新创建)
         """
-        image = GenerationImage(
-            task_type=task_type,
-            task_id=task_id,
-            angle=angle,
-            image_url=image_url,
-        )
-        self.session.add(image)
-        await self.session.flush()
-        await self.session.refresh(image)
-        return image
+        try:
+            image = GenerationImage(
+                task_type=task_type,
+                task_id=task_id,
+                angle=angle,
+                image_url=image_url,
+            )
+            self.session.add(image)
+            await self.session.flush()
+            await self.session.refresh(image)
+            return image, True
+        except IntegrityError:
+            # 唯一约束冲突，说明已存在
+            await self.session.rollback()
+            existing = await self.get_by_task(task_type, task_id)
+            if existing:
+                logger.info(f"Image already exists for task {task_type}:{task_id}")
+                return existing, False
+            # 理论上不会到这里，但作为防御
+            raise
 
     async def get_by_task(
         self,

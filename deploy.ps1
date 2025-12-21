@@ -1,7 +1,7 @@
 # Suitme 部署脚本 (PowerShell)
 # 用法: .\deploy.ps1
 
-$SSH_KEY = "C:\Users\科奥\Downloads\suitme.pem"
+$SSH_KEY = "C:\Users\bystanders\Downloads\key.pem"
 $SERVER = "root@43.139.129.10"
 $PROJECT_PATH = "/opt/suitme/suitme"
 

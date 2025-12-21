@@ -6,10 +6,12 @@ Model Service
 """
 
 import asyncio
+import logging
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db_session_context
 from app.infra.apimart_client import ApimartClient
 from app.infra.task_poller import TaskPoller
 from app.models import TaskStatus, TaskType
@@ -33,6 +35,8 @@ from app.schemas import (
 )
 from app.services.task_query_service import TaskQueryService
 
+logger = logging.getLogger(__name__)
+
 
 class BaseModelNotFoundError(Exception):
     """基础模特任务不存在异常"""
@@ -54,7 +58,7 @@ class ModelService:
         初始化模特服务
 
         Args:
-            session: 数据库会话
+            session: 数据库会话（仅用于请求范围内的操作）
             apimart_client: Apimart 客户端（可选，用于测试注入）
         """
         self.session = session
@@ -64,6 +68,7 @@ class ModelService:
         self.image_repo = ImageRepository(session)
         self.query_service = TaskQueryService(session)
         self.apimart_client = apimart_client or ApimartClient()
+        # TaskPoller 的回调会在独立会话中执行
         self._poller = TaskPoller(
             apimart_client=self.apimart_client,
             on_task_completed=self._handle_task_completed,
@@ -71,33 +76,50 @@ class ModelService:
             on_task_progress=self._handle_task_progress,
         )
 
+    # ========== 回调函数：使用独立会话 ==========
+
     async def _handle_task_progress(
         self, task_id: str, status: TaskStatus, progress: int
     ) -> None:
-        """处理任务进度更新 - 使用 TaskQueryService 统一更新"""
-        await self.query_service.update_status(task_id, TaskStatus.PROCESSING, progress)
-        await self.session.commit()
+        """处理任务进度更新 - 使用独立数据库会话"""
+        try:
+            async with get_db_session_context() as session:
+                query_service = TaskQueryService(session)
+                await query_service.update_status(task_id, TaskStatus.PROCESSING, progress)
+        except Exception as e:
+            logger.exception(f"Failed to update progress for task {task_id}: {e}")
 
     async def _handle_task_completed(
         self, task_id: str, oss_url: str | None
     ) -> None:
-        """处理任务完成 - 使用 TaskQueryService 统一更新"""
-        result = await self.query_service.update_status(task_id, TaskStatus.COMPLETED, 100)
-        if result:
-            await self.image_repo.create(
-                task_type=result.task_type,
-                task_id=result.id,
-                angle=result.angle,
-                image_url=oss_url,
-            )
-        await self.session.commit()
+        """处理任务完成 - 使用独立数据库会话"""
+        try:
+            async with get_db_session_context() as session:
+                query_service = TaskQueryService(session)
+                image_repo = ImageRepository(session)
+                result = await query_service.update_status(task_id, TaskStatus.COMPLETED, 100)
+                if result:
+                    await image_repo.create(
+                        task_type=result.task_type,
+                        task_id=result.id,
+                        angle=result.angle,
+                        image_url=oss_url,
+                    )
+        except Exception as e:
+            logger.exception(f"Failed to handle task completion for {task_id}: {e}")
 
     async def _handle_task_failed(self, task_id: str, error_message: str) -> None:
-        """处理任务失败 - 使用 TaskQueryService 统一更新"""
-        await self.query_service.update_status(
-            task_id, TaskStatus.FAILED, error_message=error_message
-        )
-        await self.session.commit()
+        """处理任务失败 - 使用独立数据库会话"""
+        try:
+            async with get_db_session_context() as session:
+                query_service = TaskQueryService(session)
+                await query_service.update_status(
+                    task_id, TaskStatus.FAILED, error_message=error_message
+                )
+        except Exception as e:
+            logger.exception(f"Failed to handle task failure for {task_id}: {e}")
+
+    # ========== Prompt 构建方法 ==========
 
     def _build_default_model_prompt(self, request: DefaultModelRequest) -> str:
         """
@@ -118,6 +140,32 @@ class ModelService:
             skin_color=profile.skin_color,
             body_type=profile.body_type,
         )
+
+    def _build_edit_model_prompt(self, request: EditModelRequest) -> str:
+        """
+        构建模特编辑的 Prompt
+
+        Args:
+            request: 模特编辑请求
+
+        Returns:
+            str: 编辑 Prompt
+        """
+        return build_edit_model_prompt(request.edit_instructions)
+
+    def _build_outfit_prompt(self, request: OutfitModelRequest) -> str:
+        """
+        构建穿搭生成的 Prompt
+
+        Args:
+            request: 穿搭生成请求
+
+        Returns:
+            str: 穿搭 Prompt
+        """
+        return build_outfit_prompt(angle=request.angle.value)
+
+    # ========== 请求处理方法 ==========
 
     async def create_default_model(
         self,
@@ -167,29 +215,6 @@ class ModelService:
             ),
         )
 
-    async def _submit_and_poll_default_model(
-        self, local_task_id: str, request: DefaultModelRequest
-    ) -> None:
-        """后台异步提交默认模特任务到 Apimart"""
-        try:
-            prompt = self._build_default_model_prompt(request)
-            apimart_task_id = await self.apimart_client.submit_generation(
-                prompt=prompt,
-                image_urls=[request.picture_url],
-                size=request.size.value,
-            )
-            # 绑定 apimart_task_id
-            await self.base_model_repo.update_apimart_task_id(local_task_id, apimart_task_id)
-            await self.session.commit()
-            # 启动轮询（使用 apimart_task_id）
-            asyncio.create_task(self._poller.start_polling(apimart_task_id, local_task_id))
-        except Exception as e:
-            # Apimart 调用失败，标记任务失败
-            await self.query_service.update_status(
-                local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
-            )
-            await self.session.commit()
-
     async def _get_base_model_image(self, base_model_task_id: str) -> tuple[int, str]:
         """
         获取基础模特任务的图片
@@ -218,18 +243,6 @@ class ModelService:
             raise BaseModelNotFoundError(f"{base_model_task_id} (no image data)")
         
         return base_task.id, image_data
-
-    def _build_edit_model_prompt(self, request: EditModelRequest) -> str:
-        """
-        构建模特编辑的 Prompt
-
-        Args:
-            request: 模特编辑请求
-
-        Returns:
-            str: 编辑 Prompt
-        """
-        return build_edit_model_prompt(request.edit_instructions)
 
     async def edit_model(self, request: EditModelRequest) -> TaskResponse:
         """
@@ -276,40 +289,6 @@ class ModelService:
                 status=TaskStatus.SUBMITTED.value,
             ),
         )
-
-    async def _submit_and_poll_edit_model(
-        self, local_task_id: str, request: EditModelRequest, base_image: str
-    ) -> None:
-        """后台异步提交编辑任务到 Apimart"""
-        try:
-            prompt = self._build_edit_model_prompt(request)
-            apimart_task_id = await self.apimart_client.submit_generation(
-                prompt=prompt,
-                image_urls=[base_image],
-                size=request.size.value,
-            )
-            # 绑定 apimart_task_id
-            await self.edit_repo.update_apimart_task_id(local_task_id, apimart_task_id)
-            await self.session.commit()
-            # 启动轮询
-            asyncio.create_task(self._poller.start_polling(apimart_task_id, local_task_id))
-        except Exception as e:
-            await self.query_service.update_status(
-                local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
-            )
-            await self.session.commit()
-
-    def _build_outfit_prompt(self, request: OutfitModelRequest) -> str:
-        """
-        构建穿搭生成的 Prompt
-
-        Args:
-            request: 穿搭生成请求
-
-        Returns:
-            str: 穿搭 Prompt
-        """
-        return build_outfit_prompt(angle=request.angle.value)
 
     async def create_outfit(self, request: OutfitModelRequest) -> TaskResponse:
         """
@@ -358,10 +337,62 @@ class ModelService:
             ),
         )
 
+    # ========== 后台提交函数：使用独立会话 ==========
+
+    async def _submit_and_poll_default_model(
+        self, local_task_id: str, request: DefaultModelRequest
+    ) -> None:
+        """后台异步提交默认模特任务到 Apimart - 使用独立数据库会话"""
+        try:
+            prompt = self._build_default_model_prompt(request)
+            apimart_task_id = await self.apimart_client.submit_generation(
+                prompt=prompt,
+                image_urls=[request.picture_url],
+                size=request.size.value,
+            )
+            # 使用独立会话更新 apimart_task_id
+            async with get_db_session_context() as session:
+                repo = BaseModelTaskRepository(session)
+                await repo.update_apimart_task_id(local_task_id, apimart_task_id)
+            # 启动轮询
+            await self._poller.start_polling(apimart_task_id, local_task_id)
+        except Exception as e:
+            logger.exception(f"Failed to submit task {local_task_id}: {e}")
+            async with get_db_session_context() as session:
+                query_service = TaskQueryService(session)
+                await query_service.update_status(
+                    local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
+                )
+
+    async def _submit_and_poll_edit_model(
+        self, local_task_id: str, request: EditModelRequest, base_image: str
+    ) -> None:
+        """后台异步提交编辑任务到 Apimart - 使用独立数据库会话"""
+        try:
+            prompt = self._build_edit_model_prompt(request)
+            apimart_task_id = await self.apimart_client.submit_generation(
+                prompt=prompt,
+                image_urls=[base_image],
+                size=request.size.value,
+            )
+            # 使用独立会话更新 apimart_task_id
+            async with get_db_session_context() as session:
+                repo = EditTaskRepository(session)
+                await repo.update_apimart_task_id(local_task_id, apimart_task_id)
+            # 启动轮询
+            await self._poller.start_polling(apimart_task_id, local_task_id)
+        except Exception as e:
+            logger.exception(f"Failed to submit task {local_task_id}: {e}")
+            async with get_db_session_context() as session:
+                query_service = TaskQueryService(session)
+                await query_service.update_status(
+                    local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
+                )
+
     async def _submit_and_poll_outfit(
         self, local_task_id: str, request: OutfitModelRequest, base_image: str
     ) -> None:
-        """后台异步提交穿搭任务到 Apimart"""
+        """后台异步提交穿搭任务到 Apimart - 使用独立数据库会话"""
         try:
             prompt = self._build_outfit_prompt(request)
             apimart_task_id = await self.apimart_client.submit_generation(
@@ -369,13 +400,16 @@ class ModelService:
                 image_urls=[base_image] + request.outfit_images,
                 size=request.size.value,
             )
-            # 绑定 apimart_task_id
-            await self.outfit_repo.update_apimart_task_id(local_task_id, apimart_task_id)
-            await self.session.commit()
+            # 使用独立会话更新 apimart_task_id
+            async with get_db_session_context() as session:
+                repo = OutfitTaskRepository(session)
+                await repo.update_apimart_task_id(local_task_id, apimart_task_id)
             # 启动轮询
-            asyncio.create_task(self._poller.start_polling(apimart_task_id, local_task_id))
+            await self._poller.start_polling(apimart_task_id, local_task_id)
         except Exception as e:
-            await self.query_service.update_status(
-                local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
-            )
-            await self.session.commit()
+            logger.exception(f"Failed to submit task {local_task_id}: {e}")
+            async with get_db_session_context() as session:
+                query_service = TaskQueryService(session)
+                await query_service.update_status(
+                    local_task_id, TaskStatus.FAILED, error_message=f"Apimart 调用失败: {str(e)}"
+                )

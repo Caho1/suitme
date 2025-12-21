@@ -736,7 +736,7 @@ async def test_database_integrity_image_association(
         await task_repo.update_status(task_id, TaskStatus.COMPLETED, progress=100)
         
         # Create image record
-        image = await image_repo.create(
+        image, created = await image_repo.create(
             task_type=TaskType.MODEL,
             task_id=task.id,
             image_base64="test_base64_data",

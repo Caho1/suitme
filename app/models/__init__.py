@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -276,7 +277,10 @@ class GenerationImage(Base):
     使用 task_type 和 task_id 实现多态关联到不同任务表。
     """
     __tablename__ = "generation_image"
-    __table_args__ = {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
+    __table_args__ = (
+        UniqueConstraint('task_type', 'task_id', name='uq_task_image'),
+        {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     
