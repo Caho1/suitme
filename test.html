@@ -243,8 +243,33 @@
             }
         }
 
-        // 存储选择的服装图片 Base64 列表
-        let selectedOutfitImages = [];
+        // 存储选择的服装图片 URL 列表
+        let selectedOutfitImages = [
+            'https://suitme.oss-cn-shenzhen.aliyuncs.com/photos/20251223220514234804_0969aca497cce618cd63e0a96aa028d0.jpg',
+            'https://suitme.oss-cn-shenzhen.aliyuncs.com/photos/20251223220514878969_e9cbe7972f8a3cd19f20fc5de96e1522.jpg',
+            'https://suitme.oss-cn-shenzhen.aliyuncs.com/photos/20251223220515365730_870e2826fa35428a9d49220712fa5d89.png'
+        ];
+        
+        // 页面加载时显示默认图片预览
+        document.addEventListener('DOMContentLoaded', function() {
+            updateOutfitPreview();
+        });
+        
+        function updateOutfitPreview() {
+            const previewContainer = document.getElementById('outfit-preview-container');
+            previewContainer.innerHTML = '';
+            previewContainer.classList.remove('hidden');
+            document.getElementById('outfit-selected-count').textContent = `已选择 ${selectedOutfitImages.length} 张图片`;
+            
+            selectedOutfitImages.forEach((url, index) => {
+                const img = document.createElement('img');
+                img.src = url;
+                img.className = 'h-20 rounded-md border';
+                img.alt = `图片 ${index + 1}`;
+                img.title = url;
+                previewContainer.appendChild(img);
+            });
+        }
         
         function handleOutfitImageSelect(input) {
             const files = input.files;

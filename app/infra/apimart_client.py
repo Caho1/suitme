@@ -87,7 +87,7 @@ class ApimartClient:
         n: int = 1,
     ) -> str:
         """
-        提交图像生成任务
+        提交图像生成任务（不重试，避免重复生图）
 
         Args:
             prompt: 生成提示词
@@ -110,22 +110,19 @@ class ApimartClient:
             "prompt": prompt,
             "size": size,
             "n": n,
-            "image_urls": [{"url": url} for url in image_urls],
+            "image_urls": image_urls,
         }
 
-        async def _do_submit() -> str:
-            client = await self._get_client()
-            try:
-                response = await client.post("/images/generations", json=payload)
-                ApimartErrorHandler.handle_response_error(response)
-                data = response.json()
-                # Apimart 返回格式: {"code":200,"data":[{"status":"submitted","task_id":"..."}]}
-                return data["data"][0]["task_id"]
-            finally:
-                if not self._http_client:
-                    await client.aclose()
-
-        return await with_retry(_do_submit)
+        client = await self._get_client()
+        try:
+            response = await client.post("/images/generations", json=payload)
+            ApimartErrorHandler.handle_response_error(response)
+            data = response.json()
+            # Apimart 返回格式: {"code":200,"data":[{"status":"submitted","task_id":"..."}]}
+            return data["data"][0]["task_id"]
+        finally:
+            if not self._http_client:
+                await client.aclose()
 
     async def get_task_status(self, external_task_id: str) -> ApimartTaskStatus:
         """
