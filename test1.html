@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suitme API 测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Suitme API 测试工具</h1>
+        
+        <!-- API Base URL & Token -->
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">API Base URL</label>
+                    <input type="text" id="baseUrl" value="http://43.139.129.10:8000" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">API Token</label>
+                    <input type="text" id="apiToken" value="" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex space-x-2 mb-4">
+            <button onclick="showTab('default')" class="tab-btn px-4 py-2 bg-blue-500 text-white rounded-t-lg" data-tab="default">创建模特</button>
+            <button onclick="showTab('edit')" class="tab-btn px-4 py-2 bg-gray-300 rounded-t-lg" data-tab="edit">编辑模特</button>
+            <button onclick="showTab('outfit')" class="tab-btn px-4 py-2 bg-gray-300 rounded-t-lg" data-tab="outfit">穿搭生成</button>
+            <button onclick="showTab('task')" class="tab-btn px-4 py-2 bg-gray-300 rounded-t-lg" data-tab="task">查询任务</button>
+        </div>
+
+        <!-- 创建默认模特 -->
+        <div id="tab-default" class="tab-content bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">POST /models/default</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">user_id</label>
+                    <input type="text" id="default-user_id" value="user-123" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">gender (性别)</label>
+                    <select id="default-gender" class="w-full px-3 py-2 border rounded-md">
+                        <option value="女">女</option>
+                        <option value="男">男</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">height (身高 cm)</label>
+                    <input type="number" id="default-height" value="165" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">weight (体重 kg)</label>
+                    <input type="number" id="default-weight" value="55" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">age (年龄)</label>
+                    <input type="number" id="default-age" value="25" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">skin_color (肤色)</label>
+                    <input type="text" id="default-skin_color" value="浅小麦" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">body_type (身材类型)</label>
+                    <input type="text" id="default-body_type" value="标准" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">size (图片比例)</label>
+                    <select id="default-size" class="w-full px-3 py-2 border rounded-md">
+                        <option value="4:3" selected>4:3 (默认)</option>
+                        <option value="1:1">1:1</option>
+                        <option value="2:3">2:3</option>
+                        <option value="3:2">3:2</option>
+                        <option value="3:4">3:4</option>
+                        <option value="4:5">4:5</option>
+                        <option value="5:4">5:4</option>
+                        <option value="9:16">9:16</option>
+                        <option value="16:9">16:9</option>
+                        <option value="21:9">21:9</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">用户照片 (将转换为 Base64 发送)</label>
+                <div class="flex gap-2 items-center">
+                    <input type="file" id="default-image" accept="image/*" class="hidden" onchange="handleImageSelect(this)">
+                    <button type="button" onclick="document.getElementById('default-image').click()" 
+                            class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">选择图片</button>
+                    <span id="selected-file-name" class="text-sm text-gray-500">未选择文件</span>
+                </div>
+                <div id="image-preview-container" class="mt-2 hidden">
+                    <img id="image-preview" class="max-h-32 rounded-md border" alt="预览">
+                </div>
+            </div>
+            <button onclick="createDefault()" class="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600">发送请求</button>
+        </div>
+
+        <!-- 编辑模特 -->
+        <div id="tab-edit" class="tab-content bg-white rounded-lg shadow p-6 hidden">
+            <h2 class="text-xl font-semibold mb-4">POST /models/edit</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">user_id</label>
+                    <input type="text" id="edit-user_id" value="user-123" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">base_model_task_id (基础模特的 task_id)</label>
+                    <input type="text" id="edit-task_id" placeholder="task_01KC8E..." class="w-full px-3 py-2 border rounded-md">
+                    <p class="text-xs text-gray-500 mt-1">创建模特后返回的 task_id</p>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">edit_instructions</label>
+                <textarea id="edit-instructions" rows="3" class="w-full px-3 py-2 border rounded-md">将发型改为短发</textarea>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">size (图片比例)</label>
+                <select id="edit-size" class="w-full px-3 py-2 border rounded-md">
+                    <option value="4:3" selected>4:3 (默认)</option>
+                    <option value="1:1">1:1</option>
+                    <option value="2:3">2:3</option>
+                    <option value="3:2">3:2</option>
+                    <option value="3:4">3:4</option>
+                    <option value="4:5">4:5</option>
+                    <option value="5:4">5:4</option>
+                    <option value="9:16">9:16</option>
+                    <option value="16:9">16:9</option>
+                    <option value="21:9">21:9</option>
+                </select>
+            </div>
+            <button onclick="editModel()" class="w-full bg-green-500 text-white py-2 rounded-md hover:bg-green-600">发送请求</button>
+        </div>
+
+        <!-- 穿搭生成 -->
+        <div id="tab-outfit" class="tab-content bg-white rounded-lg shadow p-6 hidden">
+            <h2 class="text-xl font-semibold mb-4">POST /models/outfit</h2>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">user_id</label>
+                    <input type="text" id="outfit-user_id" value="user-123" class="w-full px-3 py-2 border rounded-md">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">base_model_task_id (基础模特的 task_id)</label>
+                    <input type="text" id="outfit-task_id" placeholder="task_01KC8E..." class="w-full px-3 py-2 border rounded-md">
+                    <p class="text-xs text-gray-500 mt-1">创建模特后返回的 task_id</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">angle</label>
+                    <select id="outfit-angle" class="w-full px-3 py-2 border rounded-md">
+                        <option value="front">front</option>
+                        <option value="side">side</option>
+                        <option value="back">back</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">size (图片比例)</label>
+                    <select id="outfit-size" class="w-full px-3 py-2 border rounded-md">
+                        <option value="4:3" selected>4:3 (默认)</option>
+                        <option value="1:1">1:1</option>
+                        <option value="2:3">2:3</option>
+                        <option value="3:2">3:2</option>
+                        <option value="3:4">3:4</option>
+                        <option value="4:5">4:5</option>
+                        <option value="5:4">5:4</option>
+                        <option value="9:16">9:16</option>
+                        <option value="16:9">16:9</option>
+                        <option value="21:9">21:9</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">服装图片 (将转换为 Base64 发送，支持多选)</label>
+                <div class="flex gap-2 items-center mb-2">
+                    <input type="file" id="outfit-image-input" accept="image/*" multiple class="hidden" onchange="handleOutfitImageSelect(this)">
+                    <button type="button" onclick="document.getElementById('outfit-image-input').click()" 
+                            class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">选择图片</button>
+                    <span id="outfit-selected-count" class="text-sm text-gray-500">未选择文件 (最多5张)</span>
+                </div>
+                <div id="outfit-preview-container" class="flex gap-2 flex-wrap mb-2 hidden"></div>
+            </div>
+            <button onclick="createOutfit()" class="w-full bg-purple-500 text-white py-2 rounded-md hover:bg-purple-600">发送请求</button>
+        </div>
+
+        <!-- 查询任务 -->
+        <div id="tab-task" class="tab-content bg-white rounded-lg shadow p-6 hidden">
+            <h2 class="text-xl font-semibold mb-4">GET /tasks/{task_id}</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">task_id</label>
+                <input type="text" id="query-task_id" value="" placeholder="task_abc123def" class="w-full px-3 py-2 border rounded-md">
+                <p class="text-xs text-gray-500 mt-1">格式: task_xxxxxxx</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="queryTask()" class="flex-1 bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600">查询一次</button>
+                <button onclick="startPolling()" id="poll-btn" class="flex-1 bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600">开始轮询</button>
+                <button onclick="stopPolling()" id="stop-poll-btn" class="flex-1 bg-red-500 text-white py-2 rounded-md hover:bg-red-600 hidden">停止轮询</button>
+            </div>
+            <div id="poll-status" class="mt-2 text-sm text-gray-500 hidden"></div>
+        </div>
+
+        <!-- 响应结果 -->
+        <div class="mt-6 bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-semibold mb-2">响应结果</h3>
+            <pre id="response" class="bg-gray-900 text-green-400 p-4 rounded-md overflow-auto max-h-96 text-sm">等待请求...</pre>
+        </div>
+
+        <!-- 生成的图片 -->
+        <div id="image-container" class="mt-6 bg-white rounded-lg shadow p-6 hidden">
+            <h3 class="text-lg font-semibold mb-2">生成的图片</h3>
+            <img id="result-image" class="max-w-full rounded-md mb-4" alt="生成结果">
+            <div id="image-url-container" class="hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-1">图片 URL</label>
+                <div class="flex gap-2">
+                    <input type="text" id="image-url" readonly class="flex-1 px-3 py-2 border rounded-md bg-gray-50 text-sm">
+                    <button onclick="copyUrl()" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm">复制</button>
+                    <a id="image-link" href="#" target="_blank" class="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm">打开</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 存储选择的图片 Base64
+        let selectedImageBase64 = null;
+        
+        function handleImageSelect(input) {
+            const file = input.files[0];
+            if (file) {
+                // 显示文件名
+                document.getElementById('selected-file-name').textContent = file.name;
+                // 读取为 Base64 Data URI
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    selectedImageBase64 = e.target.result;
+                    document.getElementById('image-preview').src = selectedImageBase64;
+                    document.getElementById('image-preview-container').classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // 存储选择的服装图片 URL 列表
+        let selectedOutfitImages = [
+            'https://suitme.oss-cn-shenzhen.aliyuncs.com/photos/20251223220514234804_0969aca497cce618cd63e0a96aa028d0.jpg',
+            'https://suitme.oss-cn-shenzhen.aliyuncs.com/photos/20251223220514878969_e9cbe7972f8a3cd19f20fc5de96e1522.jpg',
+            'https://suitme.oss-cn-shenzhen.aliyuncs.com/photos/20251223220515365730_870e2826fa35428a9d49220712fa5d89.png'
+        ];
+        
+        // 页面加载时显示默认图片预览
+        document.addEventListener('DOMContentLoaded', function() {
+            updateOutfitPreview();
+        });
+        
+        function updateOutfitPreview() {
+            const previewContainer = document.getElementById('outfit-preview-container');
+            previewContainer.innerHTML = '';
+            previewContainer.classList.remove('hidden');
+            document.getElementById('outfit-selected-count').textContent = `已选择 ${selectedOutfitImages.length} 张图片`;
+            
+            selectedOutfitImages.forEach((url, index) => {
+                const img = document.createElement('img');
+                img.src = url;
+                img.className = 'h-20 rounded-md border';
+                img.alt = `图片 ${index + 1}`;
+                img.title = url;
+                previewContainer.appendChild(img);
+            });
+        }
+        
+        function handleOutfitImageSelect(input) {
+            const files = input.files;
+            if (files.length > 0) {
+                if (files.length > 5) {
+                    alert('最多只能选择5张图片');
+                    return;
+                }
+                // 显示选择数量
+                document.getElementById('outfit-selected-count').textContent = `已选择 ${files.length} 个文件`;
+                
+                // 显示预览
+                const previewContainer = document.getElementById('outfit-preview-container');
+                previewContainer.innerHTML = '';
+                previewContainer.classList.remove('hidden');
+                
+                // 清空之前的图片
+                selectedOutfitImages = [];
+                
+                Array.from(files).forEach((file, index) => {
+                    // 读取为 Base64 Data URI
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        selectedOutfitImages.push(e.target.result);
+                        
+                        // 创建预览
+                        const img = document.createElement('img');
+                        img.src = e.target.result;
+                        img.className = 'h-20 rounded-md border';
+                        img.alt = file.name;
+                        img.title = file.name;
+                        previewContainer.appendChild(img);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+        }
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('bg-blue-500', 'text-white');
+                el.classList.add('bg-gray-300');
+            });
+            document.getElementById('tab-' + tab).classList.remove('hidden');
+            document.querySelector(`[data-tab="${tab}"]`).classList.remove('bg-gray-300');
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('bg-blue-500', 'text-white');
+        }
+
+        function showResponse(data) {
+            document.getElementById('response').textContent = JSON.stringify(data, null, 2);
+            const imageContainer = document.getElementById('image-container');
+            const urlContainer = document.getElementById('image-url-container');
+            const resultImage = document.getElementById('result-image');
+            const imageUrl = document.getElementById('image-url');
+            const imageLink = document.getElementById('image-link');
+            
+            // 检查是否有图片
+            const base64 = data.data?.image?.image_base64;
+            const url = data.data?.image?.image_url;
+            
+            if (base64 || url) {
+                imageContainer.classList.remove('hidden');
+                resultImage.src = base64 || url;
+                
+                if (url) {
+                    urlContainer.classList.remove('hidden');
+                    imageUrl.value = url;
+                    imageLink.href = url;
+                } else {
+                    urlContainer.classList.add('hidden');
+                }
+            } else {
+                imageContainer.classList.add('hidden');
+            }
+            
+            // 自动填充 task_id 到查询表单
+            const taskId = data.data?.task_id;
+            if (taskId) {
+                document.getElementById('query-task_id').value = taskId;
+                // 只有创建默认模特成功时才填充到编辑/穿搭表单
+                // (编辑和穿搭任务返回的 task_id 不应覆盖 base_model_task_id)
+                const status = data.data?.status;
+                const taskType = data.data?.type;
+                if (status === 'submitted' && !taskType) {
+                    // 这是创建任务的响应，填充到编辑/穿搭表单
+                    document.getElementById('edit-task_id').value = taskId;
+                    document.getElementById('outfit-task_id').value = taskId;
+                }
+            }
+        }
+
+        function copyUrl() {
+            const url = document.getElementById('image-url').value;
+            navigator.clipboard.writeText(url).then(() => {
+                alert('URL 已复制到剪贴板');
+            });
+        }
+
+        function getHeaders() {
+            const token = document.getElementById('apiToken').value;
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+        }
+
+        async function createDefault() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            if (!selectedImageBase64) {
+                showResponse({ error: '请先选择用户照片' });
+                return;
+            }
+            const body = {
+                user_id: document.getElementById('default-user_id').value,
+                picture_url: selectedImageBase64,
+                body_profile: {
+                    gender: document.getElementById('default-gender').value,
+                    height: parseFloat(document.getElementById('default-height').value),
+                    weight: parseFloat(document.getElementById('default-weight').value),
+                    age: parseInt(document.getElementById('default-age').value),
+                    skin_color: document.getElementById('default-skin_color').value,
+                    body_type: document.getElementById('default-body_type').value
+                },
+                size: document.getElementById('default-size').value
+            };
+            try {
+                const res = await fetch(`${baseUrl}/models/default`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(body)
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+
+        async function editModel() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            const body = {
+                user_id: document.getElementById('edit-user_id').value,
+                base_model_task_id: document.getElementById('edit-task_id').value,
+                edit_instructions: document.getElementById('edit-instructions').value,
+                size: document.getElementById('edit-size').value
+            };
+            try {
+                const res = await fetch(`${baseUrl}/models/edit`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(body)
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+
+        async function createOutfit() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            if (selectedOutfitImages.length === 0) {
+                showResponse({ error: '请先选择服装图片' });
+                return;
+            }
+            const body = {
+                user_id: document.getElementById('outfit-user_id').value,
+                base_model_task_id: document.getElementById('outfit-task_id').value,
+                angle: document.getElementById('outfit-angle').value,
+                outfit_images: selectedOutfitImages,
+                size: document.getElementById('outfit-size').value
+            };
+            try {
+                const res = await fetch(`${baseUrl}/models/outfit`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify(body)
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+
+        async function queryTask() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            const taskId = document.getElementById('query-task_id').value;
+            if (!taskId) {
+                showResponse({ error: '请输入 task_id' });
+                return;
+            }
+            try {
+                const res = await fetch(`${baseUrl}/tasks/${taskId}`, {
+                    headers: getHeaders()
+                });
+                showResponse(await res.json());
+            } catch (e) {
+                showResponse({ error: e.message });
+            }
+        }
+
+        // 轮询相关
+        let pollingInterval = null;
+        
+        function startPolling() {
+            const taskId = document.getElementById('query-task_id').value;
+            if (!taskId) {
+                showResponse({ error: '请输入 task_id' });
+                return;
+            }
+            
+            document.getElementById('poll-btn').classList.add('hidden');
+            document.getElementById('stop-poll-btn').classList.remove('hidden');
+            document.getElementById('poll-status').classList.remove('hidden');
+            document.getElementById('poll-status').textContent = '轮询中...';
+            
+            // 立即查询一次
+            queryTask();
+            
+            // 每 2 秒轮询一次
+            pollingInterval = setInterval(async () => {
+                const baseUrl = document.getElementById('baseUrl').value;
+                const taskId = document.getElementById('query-task_id').value;
+                try {
+                    const res = await fetch(`${baseUrl}/tasks/${taskId}`, {
+                        headers: getHeaders()
+                    });
+                    const data = await res.json();
+                    showResponse(data);
+                    
+                    // 如果任务完成或失败，停止轮询
+                    const status = data.data?.status;
+                    if (status === 'completed' || status === 'failed') {
+                        stopPolling();
+                        document.getElementById('poll-status').textContent = `任务${status === 'completed' ? '完成' : '失败'}，已停止轮询`;
+                    }
+                } catch (e) {
+                    showResponse({ error: e.message });
+                }
+            }, 2000);
+        }
+        
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            document.getElementById('poll-btn').classList.remove('hidden');
+            document.getElementById('stop-poll-btn').classList.add('hidden');
+            document.getElementById('poll-status').textContent = '轮询已停止';
+        }
+    </script>
+</body>
+</html>

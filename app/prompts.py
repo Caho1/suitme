@@ -10,7 +10,7 @@
 - {weight_kg}: 体重 (kg)
 - {age}: 年龄
 - {skin_tone}: 肤色
-- {body_shape}: 身材类型（可选）
+- {body_type_text}: 身材类型（可选，包含前导逗号）
 - {edit_instructions}: 编辑指令
 - {angle}: 视角（正面/侧面/背面）
 """
@@ -21,7 +21,7 @@
 DEFAULT_MODEL_PROMPT = """
 
 为图片人物生成：一张背景浅色灰色的正面全身模特摄影照片，中远景，展示模特的全身
-{gender}，身高大约{height_cm}cm，中国人，体重约 {weight_kg} kg，年龄 {age} 岁，肤色为 {skin_tone}，身材为标准的模特比例，
+{gender}，身高大约{height_cm}cm，中国人，体重约 {weight_kg} kg，年龄 {age} 岁，肤色为 {skin_tone}{body_type_text}，身材为标准的模特比例，
 不要改变人物特征
 只穿着纯白短袖和牛仔裤，灯光柔和有层次，中远景展示模特的全身，包括腿和脚，比例横向4:3，人物面部特征要保持高度一致
 """
@@ -95,7 +95,7 @@ def build_default_model_prompt(
         weight_kg=weight,
         age=age,
         skin_tone=skin_color,
-        body_shape_text=body_type_text,
+        body_type_text=body_type_text,
     )
 
 

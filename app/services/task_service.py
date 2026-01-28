@@ -105,12 +105,13 @@ class TaskService:
         if result is None:
             raise TaskNotFoundError(task_id)
 
-        # 构建图片信息（如果任务已完成）
-        image_data = None
+        # 构建图片信息（字段始终返回，未完成时为 null）
+        image_data = ImageData()
         if result.status == TaskStatus.COMPLETED:
             image = await self.image_repo.get_by_task(result.task_type, result.id)
             if image:
                 image_data = ImageData(
+                    image_base64=None,
                     image_url=image.image_url,
                 )
 

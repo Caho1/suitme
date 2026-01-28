@@ -60,9 +60,16 @@ class Settings(BaseSettings):
         default=5.0,
         description="任务轮询间隔（秒）",
     )
-    task_timeout: float = Field(
-        default=120.0,
-        description="任务超时时间（秒）",
+
+    # Apimart 任务保留与启动恢复配置
+    apimart_task_retention_days: int = Field(
+        default=3,
+        ge=0,
+        description="Apimart 线上任务保留天数（用于启动恢复轮询时过滤过期任务）",
+    )
+    resume_polling_on_startup: bool = Field(
+        default=True,
+        description="是否在服务启动时恢复 pending 任务的轮询",
     )
 
     # API 认证配置

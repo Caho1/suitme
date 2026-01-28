@@ -7,8 +7,7 @@ Models API Routes
 - POST /models/outfit - 穿搭生成
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db_session
@@ -25,9 +24,15 @@ from app.services.model_service import ModelService, BaseModelNotFoundError
 router = APIRouter(prefix="/models", tags=["models"])
 
 
-def get_model_service(session: AsyncSession = Depends(get_db_session)) -> ModelService:
+def get_model_service(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+) -> ModelService:
     """依赖注入：获取 ModelService 实例"""
-    return ModelService(session)
+    # 优先使用应用级单例 poller，避免每个请求创建一套轮询与 OSS/HTTP 资源
+    task_poller = getattr(request.app.state, "task_poller", None)
+    apimart_client = getattr(request.app.state, "apimart_client", None)
+    return ModelService(session, apimart_client=apimart_client, task_poller=task_poller)
 
 
 @router.post(

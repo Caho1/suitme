@@ -5,7 +5,6 @@
 - 启动轮询
 - 轮询循环
 - 任务完成处理（获取图片 URL、上传 OSS）
-- 超时处理
 
 Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
 """
@@ -18,7 +17,7 @@ from typing import Callable, Awaitable
 from app.config import get_settings
 from app.models import TaskStatus
 from app.infra.apimart_client import ApimartClient, ApimartTaskStatus
-from app.infra.apimart_errors import ApimartError
+from app.infra.apimart_errors import ApimartError, ApimartErrorHandler
 from app.infra.oss_client import OSSClient
 
 logger = logging.getLogger(__name__)
@@ -100,7 +99,7 @@ class TaskPoller:
             await self._oss_client.close()
         
         # 取消所有活跃的轮询任务
-        for task_id, poll_task in self._active_polls.items():
+        for task_id, poll_task in list(self._active_polls.items()):
             if not poll_task.done():
                 poll_task.cancel()
                 try:
@@ -146,7 +145,7 @@ class TaskPoller:
         """
         轮询循环
 
-        持续轮询直到 Apimart 返回完成或失败状态，不设置超时。
+        持续轮询直到 Apimart 返回完成或失败状态。
 
         Args:
             apimart_task_id: Apimart 任务 ID（用于查询）
@@ -179,11 +178,10 @@ class TaskPoller:
 
                 except ApimartError as e:
                     logger.error(f"Apimart error while polling task {apimart_task_id}: {e}")
-                    # 如果是不可重试的错误，标记任务失败
-                    if not e.should_alert:
+                    # 不可重试的错误直接失败；可重试错误继续轮询
+                    if not ApimartErrorHandler.is_retryable(e):
                         await self._handle_failed(callback_task_id, str(e))
                         return
-                    # 可重试错误继续轮询
 
                 except Exception as e:
                     logger.exception(f"Unexpected error while polling task {apimart_task_id}: {e}")

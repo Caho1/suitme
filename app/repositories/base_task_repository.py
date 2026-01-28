@@ -144,3 +144,33 @@ class BaseTaskRepository(Generic[T]):
         )
         await self.session.flush()
         return await self.get_by_task_id(task_id)
+
+    async def bind_apimart_task_id_if_empty(
+        self, task_id: str, apimart_task_id: str
+    ) -> T | None:
+        """
+        幂等绑定 Apimart 返回的 task_id（仅当尚未绑定时写入）
+
+        用于防止同一本地任务被重复提交导致 apimart_task_id 被覆盖。
+
+        Args:
+            task_id: 本地生成的 task_id
+            apimart_task_id: Apimart 返回的 task_id
+
+        Returns:
+            更新后的任务对象（如已存在则返回原对象），不存在返回 None
+        """
+        existing = await self.get_by_task_id(task_id)
+        if existing is None:
+            return None
+        if existing.apimart_task_id:
+            return existing
+
+        await self.session.execute(
+            update(self.model)
+            .where(self.model.task_id == task_id)
+            .where(self.model.apimart_task_id.is_(None))
+            .values(apimart_task_id=apimart_task_id)
+        )
+        await self.session.flush()
+        return await self.get_by_task_id(task_id)

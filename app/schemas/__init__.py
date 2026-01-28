@@ -168,6 +168,7 @@ class TaskResponse(BaseModel):
 
 class ImageData(BaseModel):
     """图片数据"""
+    image_base64: str | None = Field(default=None, description="图片 Base64(Data URI)")
     image_url: str | None = Field(default=None, description="图片 OSS URL")
 
 
@@ -178,7 +179,7 @@ class TaskStatusData(BaseModel):
     progress: int = Field(default=0, description="进度百分比")
     type: str = Field(..., description="任务类型")
     angle: str | None = Field(default=None, description="视角")
-    image: ImageData | None = Field(default=None, description="图片信息 (已完成时)")
+    image: ImageData = Field(default_factory=ImageData, description="图片信息")
     error_message: str | None = Field(default=None, description="错误信息 (失败时)")
 
 
