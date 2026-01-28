@@ -12,7 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import Base
-from app.models import TaskStatus
+from app.models import TaskStatus, BaseModelTask
 
 T = TypeVar("T", bound=Base)
 
@@ -84,9 +84,10 @@ class BaseTaskRepository(Generic[T]):
         Returns:
             更新后的任务对象，不存在则返回 None
         """
+        now = datetime.now(timezone.utc)
         update_data: dict = {
             "status": status,
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": now,
         }
 
         if progress is not None:
@@ -96,7 +97,7 @@ class BaseTaskRepository(Generic[T]):
             update_data["error_message"] = error_message
 
         if status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
-            update_data["completed_at"] = datetime.now(timezone.utc)
+            update_data["completed_at"] = now
 
         await self.session.execute(
             update(self.model)
@@ -123,27 +124,6 @@ class BaseTaskRepository(Generic[T]):
             )
         )
         return list(result.scalars().all())
-
-    async def update_apimart_task_id(
-        self, task_id: str, apimart_task_id: str
-    ) -> T | None:
-        """
-        绑定 Apimart 返回的 task_id
-
-        Args:
-            task_id: 本地生成的 task_id
-            apimart_task_id: Apimart 返回的 task_id
-
-        Returns:
-            更新后的任务对象
-        """
-        await self.session.execute(
-            update(self.model)
-            .where(self.model.task_id == task_id)
-            .values(apimart_task_id=apimart_task_id)
-        )
-        await self.session.flush()
-        return await self.get_by_task_id(task_id)
 
     async def bind_apimart_task_id_if_empty(
         self, task_id: str, apimart_task_id: str
@@ -174,3 +154,18 @@ class BaseTaskRepository(Generic[T]):
         )
         await self.session.flush()
         return await self.get_by_task_id(task_id)
+
+    async def _validate_base_model_exists(self, base_model_id: int) -> bool:
+        """
+        验证 base_model_id 是否存在
+
+        Args:
+            base_model_id: 基础模特任务 ID
+
+        Returns:
+            是否存在
+        """
+        result = await self.session.execute(
+            select(BaseModelTask.id).where(BaseModelTask.id == base_model_id)
+        )
+        return result.scalar_one_or_none() is not None

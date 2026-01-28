@@ -5,10 +5,7 @@ EditTask Repository
 继承自 BaseTaskRepository 泛型基类。
 """
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models import EditTask, BaseModelTask, TaskStatus
+from app.models import EditTask, TaskStatus
 from app.repositories.base_task_repository import BaseTaskRepository
 
 
@@ -16,24 +13,6 @@ class EditTaskRepository(BaseTaskRepository[EditTask]):
     """模特编辑任务数据访问仓库"""
 
     model = EditTask
-
-    def __init__(self, session: AsyncSession):
-        super().__init__(session)
-
-    async def _validate_base_model_exists(self, base_model_id: int) -> bool:
-        """
-        验证 base_model_id 是否存在
-
-        Args:
-            base_model_id: 基础模特任务 ID
-
-        Returns:
-            是否存在
-        """
-        result = await self.session.execute(
-            select(BaseModelTask.id).where(BaseModelTask.id == base_model_id)
-        )
-        return result.scalar_one_or_none() is not None
 
     async def create(
         self,

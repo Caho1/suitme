@@ -75,76 +75,28 @@ class ModelService:
         # TaskPoller 的回调会在独立会话中执行；优先使用外部注入的 poller（避免每个请求创建一套资源）。
         self._poller = task_poller or TaskPoller(
             apimart_client=self.apimart_client,
-            on_task_completed=self._handle_task_completed,
-            on_task_failed=self._handle_task_failed,
-            on_task_progress=self._handle_task_progress,
+            on_task_completed=polling_callbacks.on_task_completed,
+            on_task_failed=polling_callbacks.on_task_failed,
+            on_task_progress=polling_callbacks.on_task_progress,
         )
-
-    # ========== 回调函数：使用独立会话 ==========
-
-    async def _handle_task_progress(
-        self, task_id: str, status: TaskStatus, progress: int
-    ) -> None:
-        """处理任务进度更新 - 使用独立数据库会话"""
-        await polling_callbacks.on_task_progress(task_id, status, progress)
-
-    async def _handle_task_completed(
-        self, task_id: str, oss_url: str | None
-    ) -> None:
-        """处理任务完成 - 使用独立数据库会话"""
-        await polling_callbacks.on_task_completed(task_id, oss_url)
-
-    async def _handle_task_failed(self, task_id: str, error_message: str) -> None:
-        """处理任务失败 - 使用独立数据库会话"""
-        await polling_callbacks.on_task_failed(task_id, error_message)
-
-    # ========== Prompt 构建方法 ==========
-
-    def _build_default_model_prompt(self, request: DefaultModelRequest) -> str:
-        """
-        构建默认模特生成的 Prompt
-
-        Args:
-            request: 默认模特请求
-
-        Returns:
-            str: 生成 Prompt
-        """
-        profile = request.body_profile
-        return build_default_model_prompt(
-            gender=profile.gender,
-            height=profile.height,
-            weight=profile.weight,
-            age=profile.age,
-            skin_color=profile.skin_color,
-            body_type=profile.body_type,
-        )
-
-    def _build_edit_model_prompt(self, request: EditModelRequest) -> str:
-        """
-        构建模特编辑的 Prompt
-
-        Args:
-            request: 模特编辑请求
-
-        Returns:
-            str: 编辑 Prompt
-        """
-        return build_edit_model_prompt(request.edit_instructions)
-
-    def _build_outfit_prompt(self, request: OutfitModelRequest) -> str:
-        """
-        构建穿搭生成的 Prompt
-
-        Args:
-            request: 穿搭生成请求
-
-        Returns:
-            str: 穿搭 Prompt
-        """
-        return build_outfit_prompt(angle=request.angle.value)
 
     # ========== 请求处理方法 ==========
+
+    def _build_accepted_response(
+        self,
+        task_id: str,
+        angle: str | None = None,
+    ) -> TaskResponse:
+        """构建任务接受响应"""
+        return TaskResponse(
+            code=0,
+            msg="accepted",
+            data=TaskData(
+                task_id=task_id,
+                status=TaskStatus.SUBMITTED.value,
+                angle=angle,
+            ),
+        )
 
     async def create_default_model(
         self,
@@ -166,7 +118,7 @@ class ModelService:
         profile = request.body_profile
         request_id = str(uuid.uuid4())
         
-        task = await self.base_model_repo.create(
+        await self.base_model_repo.create(
             task_id=local_task_id,
             request_id=request_id,
             user_id=request.user_id,
@@ -185,14 +137,7 @@ class ModelService:
         )
 
         # 3. 立即返回响应
-        return TaskResponse(
-            code=0,
-            msg="accepted",
-            data=TaskData(
-                task_id=local_task_id,
-                status=TaskStatus.SUBMITTED.value,
-            ),
-        )
+        return self._build_accepted_response(local_task_id)
 
     async def _get_base_model_image(self, base_model_task_id: str) -> tuple[int, str]:
         """
@@ -245,7 +190,7 @@ class ModelService:
         local_task_id = f"task_{uuid.uuid4().hex[:16]}"
         request_id = str(uuid.uuid4())
         
-        task = await self.edit_repo.create(
+        await self.edit_repo.create(
             task_id=local_task_id,
             request_id=request_id,
             user_id=request.user_id,
@@ -260,14 +205,7 @@ class ModelService:
         )
 
         # 4. 立即返回响应
-        return TaskResponse(
-            code=0,
-            msg="accepted",
-            data=TaskData(
-                task_id=local_task_id,
-                status=TaskStatus.SUBMITTED.value,
-            ),
-        )
+        return self._build_accepted_response(local_task_id)
 
     async def create_outfit(self, request: OutfitModelRequest) -> TaskResponse:
         """
@@ -291,7 +229,7 @@ class ModelService:
         local_task_id = f"task_{uuid.uuid4().hex[:16]}"
         request_id = str(uuid.uuid4())
         
-        task = await self.outfit_repo.create(
+        await self.outfit_repo.create(
             task_id=local_task_id,
             request_id=request_id,
             user_id=request.user_id,
@@ -306,15 +244,7 @@ class ModelService:
         )
 
         # 4. 立即返回响应
-        return TaskResponse(
-            code=0,
-            msg="accepted",
-            data=TaskData(
-                task_id=local_task_id,
-                status=TaskStatus.SUBMITTED.value,
-                angle=request.angle.value,
-            ),
-        )
+        return self._build_accepted_response(local_task_id, angle=request.angle.value)
 
     # ========== 后台提交函数：使用独立会话 ==========
 
@@ -385,10 +315,18 @@ class ModelService:
         self, local_task_id: str, request: DefaultModelRequest
     ) -> None:
         """后台异步提交默认模特任务到 Apimart - 使用独立数据库会话"""
+        profile = request.body_profile
         await self._submit_and_poll(
             local_task_id=local_task_id,
             repo_factory=BaseModelTaskRepository,
-            prompt=self._build_default_model_prompt(request),
+            prompt=build_default_model_prompt(
+                gender=profile.gender,
+                height=profile.height,
+                weight=profile.weight,
+                age=profile.age,
+                skin_color=profile.skin_color,
+                body_type=profile.body_type,
+            ),
             image_urls=[request.picture_url],
             size=request.size.value,
         )
@@ -400,7 +338,7 @@ class ModelService:
         await self._submit_and_poll(
             local_task_id=local_task_id,
             repo_factory=EditTaskRepository,
-            prompt=self._build_edit_model_prompt(request),
+            prompt=build_edit_model_prompt(request.edit_instructions),
             image_urls=[base_image],
             size=request.size.value,
         )
@@ -412,7 +350,7 @@ class ModelService:
         await self._submit_and_poll(
             local_task_id=local_task_id,
             repo_factory=OutfitTaskRepository,
-            prompt=self._build_outfit_prompt(request),
+            prompt=build_outfit_prompt(angle=request.angle.value),
             image_urls=[base_image] + request.outfit_images,
             size=request.size.value,
         )

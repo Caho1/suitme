@@ -7,6 +7,8 @@ Models API Routes
 - POST /models/outfit - 穿搭生成
 """
 
+from typing import NoReturn
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +24,14 @@ from app.services.model_service import ModelService, BaseModelNotFoundError
 
 
 router = APIRouter(prefix="/models", tags=["models"])
+
+
+def raise_base_model_not_found(task_id: str) -> NoReturn:
+    """抛出基础模特不存在的 HTTP 异常"""
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": 1003, "msg": f"基础模特任务不存在: {task_id}", "data": None},
+    )
 
 
 def get_model_service(
@@ -50,16 +60,10 @@ async def create_default_model(
 ) -> TaskResponse:
     """
     创建默认模特生成任务
-    
+
     Requirements: 1.1, 1.2, 1.3
     """
-    try:
-        return await service.create_default_model(request)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": 1004, "msg": f"内部错误: {str(e)}", "data": None},
-        )
+    return await service.create_default_model(request)
 
 
 @router.post(
@@ -78,21 +82,13 @@ async def edit_model(
 ) -> TaskResponse:
     """
     创建模特编辑任务
-    
+
     Requirements: 2.1, 2.2
     """
     try:
         return await service.edit_model(request)
     except BaseModelNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": 1003, "msg": f"基础模特任务不存在: {e.task_id}", "data": None},
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": 1004, "msg": f"内部错误: {str(e)}", "data": None},
-        )
+        raise_base_model_not_found(e.task_id)
 
 
 @router.post(
@@ -111,18 +107,10 @@ async def create_outfit(
 ) -> TaskResponse:
     """
     创建穿搭生成任务
-    
+
     Requirements: 3.1, 3.2, 3.3
     """
     try:
         return await service.create_outfit(request)
     except BaseModelNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": 1003, "msg": f"基础模特任务不存在: {e.task_id}", "data": None},
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": 1004, "msg": f"内部错误: {str(e)}", "data": None},
-        )
+        raise_base_model_not_found(e.task_id)
